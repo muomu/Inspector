@@ -1,0 +1,12 @@
+<Project>
+
+  <!-- 全仓库共享的 .NET 构建约定：目标框架、可空引用类型、隐式 using。 -->
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <LangVersion>latest</LangVersion>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+
+</Project>

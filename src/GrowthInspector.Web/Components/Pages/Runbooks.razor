@@ -1,0 +1,148 @@
+@page "/runbooks"
+@rendermode InteractiveServer
+@inject IDbContextFactory<GrowthInspectorDbContext> DbFactory
+@inject NavigationManager Nav
+
+<PageTitle>运维手册 · Growth Inspector</PageTitle>
+
+<h1>运维手册</h1>
+<p class="page-subtitle">
+    纯 Markdown 的长期记忆：技术栈、指标语义、告警规则、排查经验。
+    执行时被检查单引用，全文交给 agent；手册本身不承载可执行判定。
+</p>
+
+@if (statusMessage is not null)
+{
+    <p class="muted">@statusMessage</p>
+}
+
+@if (loadError is not null)
+{
+    <p class="error-text">加载失败：@loadError</p>
+}
+
+@if (rows.Count == 0)
+{
+    <div class="empty">还没有手册，先新建一份。</div>
+}
+else
+{
+    <table class="data">
+        <thead>
+            <tr>
+                <th>标题</th>
+                <th>项目</th>
+                <th>更新时间</th>
+                <th></th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var row in rows)
+            {
+                <tr>
+                    <td><a href="/runbooks/@row.Id">@row.Title</a></td>
+                    <td>@row.ProjectName</td>
+                    <td>@row.UpdatedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm")</td>
+                    <td class="actions"><a href="/runbooks/@row.Id">编辑</a></td>
+                </tr>
+            }
+        </tbody>
+    </table>
+}
+
+<div class="panel">
+    <h2>新建手册</h2>
+    @if (projects.Count == 0)
+    {
+        <p class="muted">还没有项目，请先到 <a href="/settings">设置</a> 创建项目与环境。</p>
+    }
+    else
+    {
+        <div class="form-row">
+            <label>
+                项目
+                <select @bind="newProjectId">
+                    <option value="">请选择项目</option>
+                    @foreach (var project in projects)
+                    {
+                        <option value="@project.Id">@project.Name</option>
+                    }
+                </select>
+            </label>
+            <label>
+                标题
+                <input @bind="newTitle" placeholder="如：growth 核心链路巡检" />
+            </label>
+            <button class="primary" @onclick="CreateAsync">创建并编辑</button>
+        </div>
+    }
+</div>
+
+@code {
+    private sealed record Row(Guid Id, string Title, string ProjectName, DateTimeOffset UpdatedAt);
+
+    private List<Row> rows = [];
+    private List<Project> projects = [];
+    private string newProjectId = "";
+    private string newTitle = "";
+    private string? statusMessage;
+    private string? loadError;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await ReloadAsync();
+    }
+
+    private async Task ReloadAsync()
+    {
+        try
+        {
+            await using var db = await DbFactory.CreateDbContextAsync();
+            projects = await db.Projects
+                .OrderBy(x => x.Name)
+                .AsNoTracking()
+                .ToListAsync();
+
+            rows = await db.Runbooks
+                .OrderByDescending(x => x.UpdatedAt)
+                .Select(x => new Row(x.Id, x.Title, x.Project!.Name, x.UpdatedAt))
+                .AsNoTracking()
+                .ToListAsync();
+        }
+        catch (Exception ex)
+        {
+            loadError = ex.Message;
+        }
+    }
+
+    private async Task CreateAsync()
+    {
+        statusMessage = null;
+
+        if (!Guid.TryParse(newProjectId, out var projectId))
+        {
+            statusMessage = "请先选择项目。";
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(newTitle))
+        {
+            statusMessage = "请填写标题。";
+            return;
+        }
+
+        var title = newTitle.Trim();
+        await using var db = await DbFactory.CreateDbContextAsync();
+        var runbook = new Runbook
+        {
+            ProjectId = projectId,
+            Title = title,
+            Body = $"# {title}\n\n（在这里写下技术栈、指标语义、告警规则、排查经验）\n",
+        };
+
+        db.Runbooks.Add(runbook);
+        await db.SaveChangesAsync();
+
+        Nav.NavigateTo($"/runbooks/{runbook.Id}");
+    }
+}

@@ -1,0 +1,77 @@
+@page "/runs"
+@inject IDbContextFactory<GrowthInspectorDbContext> DbFactory
+
+<PageTitle>执行历史 · Growth Inspector</PageTitle>
+
+<h1>执行历史</h1>
+<p class="page-subtitle">
+    每轮执行都会写入检查单快照、检查项结果与工具调用审计；页面可回溯最近一轮。
+</p>
+
+@if (rows.Count == 0)
+{
+    <div class="empty">还没有执行记录。在检查单编辑页点击「立即运行」即可产生第一轮。</div>
+}
+else
+{
+    <table class="data">
+        <thead>
+            <tr>
+                <th>检查单</th>
+                <th>环境</th>
+                <th>状态</th>
+                <th>开始时间</th>
+                <th>耗时</th>
+                <th>Token</th>
+                <th></th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var row in rows)
+            {
+                <tr>
+                    <td><a href="/runs/@row.Id">@row.ChecklistName</a></td>
+                    <td>@row.EnvironmentName</td>
+                    <td><span class="badge">@row.Status</span></td>
+                    <td>@row.StartedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss")</td>
+                    <td>@row.DurationMs ms</td>
+                    <td>@(row.PromptTokens + row.CompletionTokens)</td>
+                    <td class="actions"><a href="/runs/@row.Id">详情</a></td>
+                </tr>
+            }
+        </tbody>
+    </table>
+}
+
+@code {
+    private sealed record Row(
+        Guid Id,
+        string ChecklistName,
+        string EnvironmentName,
+        RunStatus Status,
+        DateTimeOffset StartedAt,
+        long DurationMs,
+        int PromptTokens,
+        int CompletionTokens);
+
+    private List<Row> rows = [];
+
+    protected override async Task OnInitializedAsync()
+    {
+        await using var db = await DbFactory.CreateDbContextAsync();
+        rows = await db.ChecklistRuns
+            .OrderByDescending(x => x.StartedAt)
+            .Take(100)
+            .Select(x => new Row(
+                x.Id,
+                x.Checklist != null ? x.Checklist.Name : "(已删除)",
+                x.Environment != null ? x.Environment.Name : "(已删除)",
+                x.Status,
+                x.StartedAt,
+                x.DurationMs,
+                x.PromptTokens,
+                x.CompletionTokens))
+            .AsNoTracking()
+            .ToListAsync();
+    }
+}

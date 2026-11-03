@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <ItemGroup>
+    <ProjectReference Include="..\GrowthInspector.Core\GrowthInspector.Core.csproj" />
+    <ProjectReference Include="..\GrowthInspector.Data\GrowthInspector.Data.csproj" />
+    <ProjectReference Include="..\GrowthInspector.Agents\GrowthInspector.Agents.csproj" />
+    <ProjectReference Include="..\GrowthInspector.Orchestration\GrowthInspector.Orchestration.csproj" />
+    <ProjectReference Include="..\GrowthInspector.Notifications\GrowthInspector.Notifications.csproj" />
+  </ItemGroup>
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <BlazorDisableThrowNavigationException>true</BlazorDisableThrowNavigationException>
+  </PropertyGroup>
+
+</Project>

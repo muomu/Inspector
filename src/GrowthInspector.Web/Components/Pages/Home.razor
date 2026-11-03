@@ -1,0 +1,92 @@
+@page "/"
+@inject IDbContextFactory<GrowthInspectorDbContext> DbFactory
+
+<PageTitle>总览 · Growth Inspector</PageTitle>
+
+<h1>巡检总览</h1>
+<p class="page-subtitle">
+    动态 Runbook 巡检框架骨架：<strong>手册</strong>只承载知识，<strong>检查单</strong>承载调度，
+    <strong>检查项</strong>承载判定；MCP 是唯一数据源接入方式。
+</p>
+
+@if (loadError is not null)
+{
+    <p class="error-text">加载失败：@loadError</p>
+}
+
+<div class="stat-grid">
+    <div class="stat-card"><span>项目</span><strong>@projectCount</strong></div>
+    <div class="stat-card"><span>检查单</span><strong>@checklistCount</strong></div>
+    <div class="stat-card"><span>未恢复异常</span><strong>@openFindingCount</strong></div>
+    <div class="stat-card"><span>今日执行</span><strong>@todayRunCount</strong></div>
+</div>
+
+<h2 style="margin-top:28px;">最近执行</h2>
+@if (recentRuns.Count == 0)
+{
+    <div class="empty">
+        还没有执行记录。先到 <a href="/settings">设置</a> 创建项目与环境，
+        再到 <a href="/runbooks">运维手册</a> 写一份手册、到 <a href="/checklists">检查单</a> 建一张检查单。
+    </div>
+}
+else
+{
+    <table class="data">
+        <thead>
+            <tr>
+                <th>检查单</th>
+                <th>环境</th>
+                <th>状态</th>
+                <th>开始时间</th>
+                <th>耗时</th>
+                <th>Token</th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var run in recentRuns)
+            {
+                <tr>
+                    <td><a href="/runs/@run.Id">@(run.Checklist?.Name ?? "(已删除)")</a></td>
+                    <td>@(run.Environment?.Name ?? "-")</td>
+                    <td><span class="badge">@run.Status</span></td>
+                    <td>@run.StartedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss")</td>
+                    <td>@run.DurationMs ms</td>
+                    <td>@(run.PromptTokens + run.CompletionTokens)</td>
+                </tr>
+            }
+        </tbody>
+    </table>
+}
+
+@code {
+    private int projectCount;
+    private int checklistCount;
+    private int openFindingCount;
+    private int todayRunCount;
+    private List<ChecklistRun> recentRuns = [];
+    private string? loadError;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            await using var db = await DbFactory.CreateDbContextAsync();
+            projectCount = await db.Projects.CountAsync();
+            checklistCount = await db.Checklists.CountAsync();
+            openFindingCount = await db.Findings.CountAsync(x => x.Status == FindingStatus.Open);
+            var today = DateTimeOffset.Now.Date;
+            todayRunCount = await db.ChecklistRuns.CountAsync(x => x.StartedAt >= today);
+            recentRuns = await db.ChecklistRuns
+                .Include(x => x.Checklist)
+                .Include(x => x.Environment)
+                .OrderByDescending(x => x.StartedAt)
+                .Take(5)
+                .AsNoTracking()
+                .ToListAsync();
+        }
+        catch (Exception ex)
+        {
+            loadError = ex.Message;
+        }
+    }
+}

@@ -1,0 +1,178 @@
+@page "/runs/{Id:guid}"
+@inject IDbContextFactory<GrowthInspectorDbContext> DbFactory
+@using System.Text.Json
+
+<PageTitle>执行详情 · Growth Inspector</PageTitle>
+
+@if (run is null)
+{
+    <p class="muted">执行记录不存在或已被清理。</p>
+}
+else
+{
+    <h1>执行详情</h1>
+    <p class="page-subtitle">
+        检查单：@(run.Checklist?.Name ?? "(已删除)")
+        ｜环境：@(run.Environment?.Name ?? "(已删除)")
+        ｜状态：<span class="badge">@run.Status</span>
+    </p>
+
+    <div class="stat-grid">
+        <div class="stat-card">
+            <span>开始时间</span>
+            <strong style="font-size:1rem;">@run.StartedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss")</strong>
+        </div>
+        <div class="stat-card">
+            <span>耗时</span>
+            <strong style="font-size:1rem;">@run.DurationMs ms</strong>
+        </div>
+        <div class="stat-card">
+            <span>Token（prompt / completion）</span>
+            <strong style="font-size:1rem;">@run.PromptTokens / @run.CompletionTokens</strong>
+        </div>
+    </div>
+
+    @if (!string.IsNullOrWhiteSpace(run.ErrorMessage))
+    {
+        <p class="error-text">@run.ErrorMessage</p>
+    }
+
+    <h2 style="margin-top:28px;">检查项结果</h2>
+    @if (run.Results.Count == 0)
+    {
+        <div class="empty">本轮没有检查项结果。</div>
+    }
+    else
+    {
+        <table class="data">
+            <thead>
+                <tr>
+                    <th>检查项</th>
+                    <th>判定</th>
+                    <th>证据</th>
+                    <th>耗时</th>
+                    <th>Token</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var result in run.Results.OrderBy(x => x.CreatedAt))
+                {
+                    <tr>
+                        <td>@ItemTitle(result.ChecklistItemId)</td>
+                        <td><span class="badge">@result.Status</span></td>
+                        <td>@(Shorten(result.Evidence, 300))</td>
+                        <td>@result.DurationMs ms</td>
+                        <td>@(result.PromptTokens + result.CompletionTokens)</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    }
+
+    <h2 style="margin-top:28px;">工具调用</h2>
+    @if (run.ToolCalls.Count == 0)
+    {
+        <div class="empty">本轮没有工具调用记录（agent / MCP 执行链路尚未接入）。</div>
+    }
+    else
+    {
+        <table class="data">
+            <thead>
+                <tr>
+                    <th>工具</th>
+                    <th>参数</th>
+                    <th>结果（截断）</th>
+                    <th>耗时</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var call in run.ToolCalls.OrderBy(x => x.CreatedAt))
+                {
+                    <tr>
+                        <td>@call.ToolName</td>
+                        <td>@(Shorten(call.Arguments, 200))</td>
+                        <td>@(Shorten(call.Result, 300))</td>
+                        <td>@call.DurationMs ms</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    }
+
+    <h2 style="margin-top:28px;">执行快照</h2>
+    @if (snapshot is null)
+    {
+        <p class="muted">快照解析失败。</p>
+    }
+    else
+    {
+        <p class="muted">
+            检查项 @snapshot.Items.Count 个；引用的手册 @snapshot.Runbooks.Count 份（执行时固化的全文如下）。
+        </p>
+        @foreach (var runbook in snapshot.Runbooks)
+        {
+            <h3>@runbook.Title</h3>
+            <pre class="snapshot">@runbook.Body</pre>
+        }
+    }
+
+    <h2 style="margin-top:28px;">AI 摘要</h2>
+    @if (run.Summary is null)
+    {
+        <div class="empty">本轮没有 AI 摘要（摘要 agent 由 TPG-2711 接入）。</div>
+    }
+    else
+    {
+        <pre class="report">@run.Summary.Content</pre>
+    }
+}
+
+@code {
+    [Parameter]
+    public Guid Id { get; set; }
+
+    private ChecklistRun? run;
+    private ChecklistSnapshot? snapshot;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        await using var db = await DbFactory.CreateDbContextAsync();
+        run = await db.ChecklistRuns
+            .Include(x => x.Checklist)
+            .Include(x => x.Environment)
+            .Include(x => x.Results)
+            .Include(x => x.ToolCalls)
+            .Include(x => x.Summary)
+            .AsNoTracking()
+            .SingleOrDefaultAsync(x => x.Id == Id);
+
+        if (run is null)
+        {
+            return;
+        }
+
+        try
+        {
+            snapshot = JsonSerializer.Deserialize<ChecklistSnapshot>(
+                run.SnapshotJson,
+                new JsonSerializerOptions(JsonSerializerDefaults.Web));
+        }
+        catch (JsonException)
+        {
+            snapshot = null;
+        }
+    }
+
+    private string ItemTitle(Guid itemId)
+        => snapshot?.Items.FirstOrDefault(x => x.ItemId == itemId)?.Title ?? "(已删除检查项)";
+
+    private static string Shorten(string? value, int maxLength)
+    {
+        if (string.IsNullOrEmpty(value))
+        {
+            return "-";
+        }
+
+        return value.Length <= maxLength ? value : value[..maxLength] + "…";
+    }
+}

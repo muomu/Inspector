@@ -1,0 +1,229 @@
+@page "/checklists"
+@rendermode InteractiveServer
+@inject IDbContextFactory<GrowthInspectorDbContext> DbFactory
+@inject NavigationManager Nav
+
+<PageTitle>检查单 · Growth Inspector</PageTitle>
+
+<h1>检查单</h1>
+<p class="page-subtitle">
+    一次可调度执行的单元：一张检查单一个频率，引用同项目下多份手册，包含多个检查项；
+    执行时按环境创建 run 并写快照。
+</p>
+
+@if (statusMessage is not null)
+{
+    <p class="muted">@statusMessage</p>
+}
+
+@if (loadError is not null)
+{
+    <p class="error-text">加载失败：@loadError</p>
+}
+
+@if (rows.Count == 0)
+{
+    <div class="empty">还没有检查单，先新建一张。</div>
+}
+else
+{
+    <table class="data">
+        <thead>
+            <tr>
+                <th>名称</th>
+                <th>项目</th>
+                <th>频率</th>
+                <th>启用</th>
+                <th>检查项</th>
+                <th>引用手册</th>
+                <th>最近运行</th>
+                <th></th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var row in rows)
+            {
+                <tr>
+                    <td><a href="/checklists/@row.Id">@row.Name</a></td>
+                    <td>@row.ProjectName</td>
+                    <td>@FrequencyText(row.Frequency)</td>
+                    <td>@(row.IsEnabled ? "是" : "否")</td>
+                    <td>@row.ItemCount</td>
+                    <td>@row.RunbookRefCount</td>
+                    <td>@(row.LastRunAt is null ? "-" : row.LastRunAt.Value.ToLocalTime().ToString("MM-dd HH:mm"))</td>
+                    <td class="actions">
+                        <a href="/checklists/@row.Id">编辑</a>
+                        <button @onclick="() => ToggleAsync(row)">@(row.IsEnabled ? "停用" : "启用")</button>
+                    </td>
+                </tr>
+            }
+        </tbody>
+    </table>
+}
+
+<div class="panel">
+    <h2>新建检查单</h2>
+    @if (projects.Count == 0)
+    {
+        <p class="muted">还没有项目，请先到 <a href="/settings">设置</a> 创建项目与环境。</p>
+    }
+    else
+    {
+        <div class="form-row">
+            <label>
+                项目
+                <select @bind="newProjectId">
+                    <option value="">请选择项目</option>
+                    @foreach (var project in projects)
+                    {
+                        <option value="@project.Id">@project.Name</option>
+                    }
+                </select>
+            </label>
+            <label>
+                名称
+                <input @bind="newName" placeholder="如：growth 核心链路巡检" />
+            </label>
+            <label>
+                频率
+                <select @bind="newFrequencyText">
+                    <option value="Manual">手动</option>
+                    <option value="Hourly">每小时</option>
+                    <option value="Daily">每天</option>
+                </select>
+            </label>
+            <button class="primary" @onclick="CreateAsync">创建并编辑</button>
+        </div>
+    }
+</div>
+
+@code {
+    private sealed record Row(
+        Guid Id,
+        string Name,
+        string ProjectName,
+        ChecklistFrequency Frequency,
+        bool IsEnabled,
+        int ItemCount,
+        int RunbookRefCount,
+        DateTimeOffset? LastRunAt);
+
+    private List<Row> rows = [];
+    private List<Project> projects = [];
+    private string newProjectId = "";
+    private string newName = "";
+    private string newFrequencyText = "Manual";
+    private string? statusMessage;
+    private string? loadError;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await ReloadAsync();
+    }
+
+    private async Task ReloadAsync()
+    {
+        try
+        {
+            await using var db = await DbFactory.CreateDbContextAsync();
+            projects = await db.Projects
+                .OrderBy(x => x.Name)
+                .AsNoTracking()
+                .ToListAsync();
+
+            var lastRuns = await db.ChecklistRuns
+                .GroupBy(x => x.ChecklistId)
+                .Select(g => new { ChecklistId = g.Key, LastRunAt = g.Max(x => x.StartedAt) })
+                .ToDictionaryAsync(x => x.ChecklistId, x => x.LastRunAt);
+
+            var checklists = await db.Checklists
+                .OrderByDescending(x => x.UpdatedAt)
+                .Select(x => new
+                {
+                    x.Id,
+                    x.Name,
+                    ProjectName = x.Project!.Name,
+                    x.Frequency,
+                    x.IsEnabled,
+                    ItemCount = x.Items.Count,
+                    RunbookRefCount = x.RunbookRefs.Count,
+                })
+                .AsNoTracking()
+                .ToListAsync();
+
+            rows = checklists
+                .Select(x => new Row(
+                    x.Id,
+                    x.Name,
+                    x.ProjectName,
+                    x.Frequency,
+                    x.IsEnabled,
+                    x.ItemCount,
+                    x.RunbookRefCount,
+                    lastRuns.GetValueOrDefault(x.Id)))
+                .ToList();
+        }
+        catch (Exception ex)
+        {
+            loadError = ex.Message;
+        }
+    }
+
+    private async Task ToggleAsync(Row row)
+    {
+        await using var db = await DbFactory.CreateDbContextAsync();
+        var entity = await db.Checklists.SingleOrDefaultAsync(x => x.Id == row.Id);
+        if (entity is null)
+        {
+            return;
+        }
+
+        entity.IsEnabled = !entity.IsEnabled;
+        entity.UpdatedAt = DateTimeOffset.UtcNow;
+        await db.SaveChangesAsync();
+        await ReloadAsync();
+    }
+
+    private async Task CreateAsync()
+    {
+        statusMessage = null;
+
+        if (!Guid.TryParse(newProjectId, out var projectId))
+        {
+            statusMessage = "请先选择项目。";
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(newName))
+        {
+            statusMessage = "请填写检查单名称。";
+            return;
+        }
+
+        if (!Enum.TryParse<ChecklistFrequency>(newFrequencyText, out var frequency))
+        {
+            frequency = ChecklistFrequency.Manual;
+        }
+
+        await using var db = await DbFactory.CreateDbContextAsync();
+        var checklist = new Checklist
+        {
+            ProjectId = projectId,
+            Name = newName.Trim(),
+            Frequency = frequency,
+            IsEnabled = true,
+        };
+
+        db.Checklists.Add(checklist);
+        await db.SaveChangesAsync();
+
+        Nav.NavigateTo($"/checklists/{checklist.Id}");
+    }
+
+    private static string FrequencyText(ChecklistFrequency frequency) => frequency switch
+    {
+        ChecklistFrequency.Hourly => "每小时",
+        ChecklistFrequency.Daily => "每天",
+        _ => "手动",
+    };
+}

@@ -1,0 +1,364 @@
+@page "/settings"
+@rendermode InteractiveServer
+@inject IDbContextFactory<GrowthInspectorDbContext> DbFactory
+
+<PageTitle>设置 · Growth Inspector</PageTitle>
+
+<h1>设置</h1>
+<p class="page-subtitle">项目 / 环境 / MCP server 管理（骨架实现，交互细节由 U1 细化）。</p>
+
+@if (statusMessage is not null)
+{
+    <p class="muted">@statusMessage</p>
+}
+
+<div class="panel">
+    <h2>项目</h2>
+    @if (projects.Count == 0)
+    {
+        <p class="muted">还没有项目，先创建一个。</p>
+    }
+    else
+    {
+        <table class="data">
+            <thead>
+                <tr>
+                    <th>名称</th>
+                    <th>标识</th>
+                    <th>Lark webhook</th>
+                    <th>创建时间</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var project in projects)
+                {
+                    <tr>
+                        <td>@project.Name</td>
+                        <td>@(project.Code ?? "-")</td>
+                        <td>@(string.IsNullOrWhiteSpace(project.LarkWebhookUrl) ? "未配置" : "已配置")</td>
+                        <td>@project.CreatedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm")</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    }
+
+    <h3 style="margin-top:20px;">新建项目</h3>
+    <div class="form-row">
+        <label>名称<input @bind="projectName" placeholder="如：Growth" /></label>
+        <label>标识<input @bind="projectCode" placeholder="如：growth" /></label>
+        <label>Lark webhook<input @bind="projectWebhook" placeholder="https://open.larksuite.com/..." /></label>
+    </div>
+    <div class="form-col">
+        <label>项目级运维上下文（Markdown，会随手册交给 agent）<textarea rows="3" @bind="projectOpsContext"></textarea></label>
+    </div>
+    <div class="form-row">
+        <button class="primary" @onclick="CreateProjectAsync">创建项目</button>
+    </div>
+</div>
+
+<div class="panel">
+    <h2>环境</h2>
+    @if (environments.Count == 0)
+    {
+        <p class="muted">还没有环境。</p>
+    }
+    else
+    {
+        <table class="data">
+            <thead>
+                <tr>
+                    <th>项目</th>
+                    <th>名称</th>
+                    <th>默认</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var environment in environments)
+                {
+                    <tr>
+                        <td>@environment.ProjectName</td>
+                        <td>@environment.Name</td>
+                        <td>@(environment.IsDefault ? "是" : "否")</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    }
+
+    <h3 style="margin-top:20px;">新建环境</h3>
+    @if (projects.Count == 0)
+    {
+        <p class="muted">请先创建项目。</p>
+    }
+    else
+    {
+        <div class="form-row">
+            <label>
+                项目
+                <select @bind="environmentProjectId">
+                    <option value="">请选择项目</option>
+                    @foreach (var project in projects)
+                    {
+                        <option value="@project.Id">@project.Name</option>
+                    }
+                </select>
+            </label>
+            <label>名称<input @bind="environmentName" placeholder="如：prod / beta" /></label>
+            <label class="checkbox-line"><input type="checkbox" @bind="environmentIsDefault" /> 设为默认环境</label>
+            <button class="primary" @onclick="CreateEnvironmentAsync">创建环境</button>
+        </div>
+    }
+</div>
+
+<div class="panel">
+    <h2>MCP server</h2>
+    <p class="muted">MCP 是唯一数据源接入方式；新增数据源 = 登记一个 server（v1 只要求 mock MCP server 可跑通）。</p>
+    @if (mcpServers.Count == 0)
+    {
+        <p class="muted">还没有登记 MCP server。</p>
+    }
+    else
+    {
+        <table class="data">
+            <thead>
+                <tr>
+                    <th>项目</th>
+                    <th>名称</th>
+                    <th>传输</th>
+                    <th>启用</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var server in mcpServers)
+                {
+                    <tr>
+                        <td>@server.ProjectName</td>
+                        <td>@server.Name</td>
+                        <td>@server.Transport</td>
+                        <td>@(server.IsEnabled ? "是" : "否")</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    }
+
+    <h3 style="margin-top:20px;">登记 MCP server</h3>
+    @if (projects.Count == 0)
+    {
+        <p class="muted">请先创建项目。</p>
+    }
+    else
+    {
+        <div class="form-row">
+            <label>
+                项目
+                <select @bind="mcpProjectId">
+                    <option value="">请选择项目</option>
+                    @foreach (var project in projects)
+                    {
+                        <option value="@project.Id">@project.Name</option>
+                    }
+                </select>
+            </label>
+            <label>名称<input @bind="mcpName" placeholder="如：mock-metrics" /></label>
+            <label>
+                传输
+                <select @bind="mcpTransportText">
+                    <option value="Stdio">stdio（本地子进程）</option>
+                    <option value="Http">HTTP</option>
+                </select>
+            </label>
+            <button class="primary" @onclick="CreateMcpServerAsync">登记</button>
+        </div>
+        <div class="form-row">
+            @if (mcpTransportText == "Http")
+            {
+                <label style="flex:1;">URL<input @bind="mcpUrl" placeholder="https://..." /></label>
+            }
+            else
+            {
+                <label style="flex:1;">启动命令<input @bind="mcpCommand" placeholder="dotnet / python / node ..." /></label>
+                <label style="flex:1;">参数（JSON 数组）<input @bind="mcpArgumentsJson" placeholder="[&quot;run&quot;,&quot;--project&quot;,&quot;...&quot;]" /></label>
+            }
+        </div>
+    }
+</div>
+
+@code {
+    private sealed record EnvironmentRow(Guid Id, string ProjectName, string Name, bool IsDefault);
+
+    private sealed record McpServerRow(Guid Id, string ProjectName, string Name, McpTransport Transport, bool IsEnabled);
+
+    private List<Project> projects = [];
+    private List<EnvironmentRow> environments = [];
+    private List<McpServerRow> mcpServers = [];
+    private string? statusMessage;
+
+    private string projectName = "";
+    private string projectCode = "";
+    private string projectWebhook = "";
+    private string projectOpsContext = "";
+
+    private string environmentProjectId = "";
+    private string environmentName = "";
+    private bool environmentIsDefault;
+
+    private string mcpProjectId = "";
+    private string mcpName = "";
+    private string mcpTransportText = "Stdio";
+    private string mcpCommand = "";
+    private string mcpArgumentsJson = "";
+    private string mcpUrl = "";
+
+    protected override async Task OnInitializedAsync()
+    {
+        await ReloadAsync();
+    }
+
+    private async Task ReloadAsync()
+    {
+        await using var db = await DbFactory.CreateDbContextAsync();
+        projects = await db.Projects
+            .OrderBy(x => x.Name)
+            .AsNoTracking()
+            .ToListAsync();
+
+        environments = await db.Environments
+            .OrderBy(x => x.Project!.Name)
+            .ThenBy(x => x.Name)
+            .Select(x => new EnvironmentRow(x.Id, x.Project!.Name, x.Name, x.IsDefault))
+            .AsNoTracking()
+            .ToListAsync();
+
+        mcpServers = await db.McpServers
+            .OrderBy(x => x.Project!.Name)
+            .ThenBy(x => x.Name)
+            .Select(x => new McpServerRow(x.Id, x.Project!.Name, x.Name, x.Transport, x.IsEnabled))
+            .AsNoTracking()
+            .ToListAsync();
+    }
+
+    private async Task CreateProjectAsync()
+    {
+        statusMessage = null;
+        if (string.IsNullOrWhiteSpace(projectName))
+        {
+            statusMessage = "项目名称不能为空。";
+            return;
+        }
+
+        await using var db = await DbFactory.CreateDbContextAsync();
+        db.Projects.Add(new Project
+        {
+            Name = projectName.Trim(),
+            Code = string.IsNullOrWhiteSpace(projectCode) ? null : projectCode.Trim(),
+            LarkWebhookUrl = string.IsNullOrWhiteSpace(projectWebhook) ? null : projectWebhook.Trim(),
+            OpsContext = string.IsNullOrWhiteSpace(projectOpsContext) ? null : projectOpsContext,
+        });
+
+        await db.SaveChangesAsync();
+        projectName = "";
+        projectCode = "";
+        projectWebhook = "";
+        projectOpsContext = "";
+        statusMessage = "项目已创建。";
+        await ReloadAsync();
+    }
+
+    private async Task CreateEnvironmentAsync()
+    {
+        statusMessage = null;
+        if (!Guid.TryParse(environmentProjectId, out var projectId))
+        {
+            statusMessage = "请选择项目。";
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(environmentName))
+        {
+            statusMessage = "环境名称不能为空。";
+            return;
+        }
+
+        await using var db = await DbFactory.CreateDbContextAsync();
+        if (environmentIsDefault)
+        {
+            var others = await db.Environments
+                .Where(x => x.ProjectId == projectId && x.IsDefault)
+                .ToListAsync();
+            foreach (var other in others)
+            {
+                other.IsDefault = false;
+            }
+        }
+
+        db.Environments.Add(new GrowthInspector.Core.Models.Environment
+        {
+            ProjectId = projectId,
+            Name = environmentName.Trim(),
+            IsDefault = environmentIsDefault,
+        });
+
+        await db.SaveChangesAsync();
+        environmentName = "";
+        environmentIsDefault = false;
+        statusMessage = "环境已创建。";
+        await ReloadAsync();
+    }
+
+    private async Task CreateMcpServerAsync()
+    {
+        statusMessage = null;
+        if (!Guid.TryParse(mcpProjectId, out var projectId))
+        {
+            statusMessage = "请选择项目。";
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(mcpName))
+        {
+            statusMessage = "MCP server 名称不能为空。";
+            return;
+        }
+
+        if (!Enum.TryParse<McpTransport>(mcpTransportText, out var transport))
+        {
+            transport = McpTransport.Stdio;
+        }
+
+        if (transport == McpTransport.Stdio && string.IsNullOrWhiteSpace(mcpCommand))
+        {
+            statusMessage = "stdio 传输需要填写启动命令。";
+            return;
+        }
+
+        if (transport == McpTransport.Http && string.IsNullOrWhiteSpace(mcpUrl))
+        {
+            statusMessage = "HTTP 传输需要填写 URL。";
+            return;
+        }
+
+        await using var db = await DbFactory.CreateDbContextAsync();
+        db.McpServers.Add(new McpServer
+        {
+            ProjectId = projectId,
+            Name = mcpName.Trim(),
+            Transport = transport,
+            Command = transport == McpTransport.Stdio ? mcpCommand.Trim() : null,
+            ArgumentsJson = transport == McpTransport.Stdio && !string.IsNullOrWhiteSpace(mcpArgumentsJson)
+                ? mcpArgumentsJson.Trim()
+                : null,
+            Url = transport == McpTransport.Http ? mcpUrl.Trim() : null,
+            IsEnabled = true,
+        });
+
+        await db.SaveChangesAsync();
+        mcpName = "";
+        mcpCommand = "";
+        mcpArgumentsJson = "";
+        mcpUrl = "";
+        statusMessage = "MCP server 已登记。";
+        await ReloadAsync();
+    }
+}

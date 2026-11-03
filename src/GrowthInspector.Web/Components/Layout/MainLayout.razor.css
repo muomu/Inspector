@@ -1,0 +1,114 @@
+.app-shell {
+    display: flex;
+    min-height: 100vh;
+}
+
+.sidebar {
+    width: 232px;
+    flex: 0 0 232px;
+    padding: 20px 16px;
+    border-right: 1px solid #d9dde3;
+    background: #f7f8fa;
+    display: flex;
+    flex-direction: column;
+    gap: 24px;
+}
+
+.content {
+    flex: 1;
+    min-width: 0;
+    padding: 24px 32px 48px;
+}
+
+.brand {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.brand-title {
+    font-size: 1.05rem;
+    font-weight: 600;
+}
+
+.brand-subtitle {
+    font-size: 0.75rem;
+    color: #64707d;
+}
+
+.nav-menu {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.nav-item {
+    display: block;
+    padding: 8px 10px;
+    border-radius: 6px;
+    color: #33404d;
+    text-decoration: none;
+    font-size: 0.92rem;
+}
+
+.nav-item:hover {
+    background: #e9edf2;
+}
+
+.nav-item.active {
+    background: #e2e8f0;
+    font-weight: 600;
+    color: #1f2937;
+}
+
+.nav-footer {
+    margin-top: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    font-size: 0.72rem;
+    color: #7b8794;
+}
+
+#blazor-error-ui {
+    color-scheme: light only;
+    background: lightyellow;
+    bottom: 0;
+    box-shadow: 0 -1px 2px rgba(0, 0, 0, 0.2);
+    box-sizing: border-box;
+    display: none;
+    left: 0;
+    padding: 0.6rem 1.25rem 0.7rem 1.25rem;
+    position: fixed;
+    width: 100%;
+    z-index: 1000;
+}
+
+#blazor-error-ui .dismiss {
+    cursor: pointer;
+    position: absolute;
+    right: 0.75rem;
+    top: 0.5rem;
+}
+
+@media (max-width: 860px) {
+    .app-shell {
+        flex-direction: column;
+    }
+
+    .sidebar {
+        width: auto;
+        flex: none;
+        border-right: none;
+        border-bottom: 1px solid #d9dde3;
+    }
+
+    .nav-menu {
+        flex-direction: row;
+        flex-wrap: wrap;
+    }
+
+    .content {
+        padding: 16px;
+    }
+}

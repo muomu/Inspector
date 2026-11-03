@@ -1,0 +1,72 @@
+@page "/reports"
+@rendermode InteractiveServer
+@inject IDbContextFactory<GrowthInspectorDbContext> DbFactory
+@inject DailyReportService ReportService
+
+<PageTitle>日报 · Growth Inspector</PageTitle>
+
+<h1>巡检日报</h1>
+<p class="page-subtitle">
+    每天 10:00 生成并发送（骨架：生成与落库已接，Lark 发送与 AI 摘要由 TPG-2714 / TPG-2711 接入）。
+</p>
+
+<div class="form-row">
+    <button class="primary" @onclick="GenerateAsync">生成今日日报</button>
+    <span class="muted">@statusMessage</span>
+</div>
+
+@if (summaries.Count == 0)
+{
+    <div class="empty">还没有日报。点击上方按钮，会用当前运行数据生成一份（示例数据）。</div>
+}
+else
+{
+    @foreach (var summary in summaries)
+    {
+        <div class="panel">
+            <h2>@ReportDateText(summary)</h2>
+            <p class="muted">生成于 @summary.CreatedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss")</p>
+            <pre class="report">@summary.Content</pre>
+        </div>
+    }
+}
+
+@code {
+    private List<AiSummary> summaries = [];
+    private string? statusMessage;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await ReloadAsync();
+    }
+
+    private async Task ReloadAsync()
+    {
+        await using var db = await DbFactory.CreateDbContextAsync();
+        summaries = await db.AiSummaries
+            .Where(x => x.Kind == AiSummaryKind.DailyReport)
+            .OrderByDescending(x => x.CreatedAt)
+            .Take(10)
+            .AsNoTracking()
+            .ToListAsync();
+    }
+
+    private async Task GenerateAsync()
+    {
+        statusMessage = null;
+        try
+        {
+            var today = DateOnly.FromDateTime(DateTime.Today);
+            await ReportService.GenerateAsync(today);
+            statusMessage = $"已生成 {DateTimeOffset.Now:HH:mm:ss} 的日报。";
+            await ReloadAsync();
+        }
+        catch (Exception ex)
+        {
+            statusMessage = $"生成失败：{ex.Message}";
+        }
+    }
+
+    private static string ReportDateText(AiSummary summary)
+        => summary.ReportDate is { } date ? $"{date:yyyy-MM-dd} 日报" : "日报";
+}
