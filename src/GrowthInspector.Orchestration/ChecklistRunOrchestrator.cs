@@ -2,10 +2,14 @@ using System.Diagnostics;
 using System.Text.Json;
 using GrowthInspector.Core.Abstractions;
 using GrowthInspector.Core.Models;
+using GrowthInspector.Core.Options;
 using GrowthInspector.Data;
 using GrowthInspector.Orchestration.Scheduling;
+using GrowthInspector.Orchestration.Summaries;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 
 namespace GrowthInspector.Orchestration;
 
@@ -18,6 +22,8 @@ public sealed class ChecklistRunOrchestrator(
     ChecklistRunFactory runFactory,
     IDbContextFactory<GrowthInspectorDbContext> dbContextFactory,
     IChecklistItemExecutor itemExecutor,
+    IServiceProvider serviceProvider,
+    IOptions<InspectionOptions> options,
     TimeProvider timeProvider,
     ILogger<ChecklistRunOrchestrator> logger) : IInspectionOrchestrator, IChecklistRunExecutor
 {
@@ -98,6 +104,8 @@ public sealed class ChecklistRunOrchestrator(
             run.Status = RunStatus.Running;
             await db.SaveChangesAsync(cancellationToken);
 
+            var itemTimeoutSeconds = Math.Max(1, options.Value.AgentItemTimeoutSeconds);
+
             foreach (var item in snapshot.Items.OrderBy(x => x.SortOrder))
             {
                 cancellationToken.ThrowIfCancellationRequested();
@@ -114,13 +122,27 @@ public sealed class ChecklistRunOrchestrator(
 
                 var itemStopwatch = Stopwatch.StartNew();
                 ChecklistItemExecutionResult? execution;
+                using var itemTimeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+                itemTimeout.CancelAfter(TimeSpan.FromSeconds(itemTimeoutSeconds));
                 try
                 {
-                    execution = await itemExecutor.ExecuteAsync(request, cancellationToken);
+                    execution = await itemExecutor.ExecuteAsync(request, itemTimeout.Token);
                 }
                 catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
                 {
                     throw;
+                }
+                catch (OperationCanceledException) when (itemTimeout.IsCancellationRequested)
+                {
+                    logger.LogWarning(
+                        "检查项「{Title}」执行超时（{TimeoutSeconds}s，runId={RunId}），记 Error 后继续后续检查项。",
+                        item.Title,
+                        itemTimeoutSeconds,
+                        run.Id);
+                    execution = new ChecklistItemExecutionResult(
+                        Status: CheckResultStatus.Error,
+                        ErrorMessage: $"检查项执行超时（{itemTimeoutSeconds} 秒）。",
+                        DurationMs: itemStopwatch.ElapsedMilliseconds);
                 }
                 catch (Exception ex)
                 {
@@ -193,6 +215,62 @@ public sealed class ChecklistRunOrchestrator(
             run.DurationMs,
             run.PromptTokens,
             run.CompletionTokens);
+
+        // 整轮结束后先生成摘要，再做 finding / Lark 判定；两者都是旁路，失败不改变执行终态，
+        // 也不在这里重复实现 finding 状态机（由 TPG-2713 的 IFindingNotifier 负责）。
+        if (run.Status is RunStatus.Succeeded or RunStatus.Failed)
+        {
+            await TrySummarizeAsync(run.Id, cancellationToken);
+            await TryEvaluateFindingsAsync(run.Id, cancellationToken);
+        }
+    }
+
+    private async Task TrySummarizeAsync(Guid checklistRunId, CancellationToken cancellationToken)
+    {
+        try
+        {
+            var summaryService = serviceProvider.GetService<IRunSummaryService>();
+            if (summaryService is null)
+            {
+                logger.LogDebug("未注册 IRunSummaryService，跳过执行 {RunId} 的摘要生成。", checklistRunId);
+                return;
+            }
+
+            await summaryService.SummarizeRunAsync(checklistRunId, cancellationToken);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            logger.LogInformation("应用停止，跳过执行 {RunId} 的摘要生成。", checklistRunId);
+        }
+        catch (Exception ex)
+        {
+            // 摘要失败不影响本轮执行结果；AiSummary 由摘要服务自身兜底。
+            logger.LogError(ex, "执行 {RunId} 的摘要生成失败（不改变执行终态）。", checklistRunId);
+        }
+    }
+
+    private async Task TryEvaluateFindingsAsync(Guid checklistRunId, CancellationToken cancellationToken)
+    {
+        try
+        {
+            var findingNotifier = serviceProvider.GetService<IFindingNotifier>();
+            if (findingNotifier is null)
+            {
+                logger.LogDebug("未注册 IFindingNotifier，跳过执行 {RunId} 的 finding 判定。", checklistRunId);
+                return;
+            }
+
+            await findingNotifier.EvaluateRunAsync(checklistRunId, cancellationToken);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            logger.LogInformation("应用停止，跳过执行 {RunId} 的 finding 判定。", checklistRunId);
+        }
+        catch (Exception ex)
+        {
+            // finding / Lark 失败不影响本轮执行结果。
+            logger.LogError(ex, "执行 {RunId} 的 finding 判定失败（不改变执行终态）。", checklistRunId);
+        }
     }
 
     private static CheckResult ToCheckResult(
