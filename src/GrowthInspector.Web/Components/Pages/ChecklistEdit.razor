@@ -1,154 +1,254 @@
 @page "/checklists/{Id:guid}"
+@layout DesignLayout
 @rendermode InteractiveServer
 @inject IManagementService Management
 @inject IChecklistRunQueue RunQueue
+@inject WorkspaceContextService Workspace
 @inject NavigationManager Nav
 
-<PageTitle>编辑检查单 · Growth Inspector</PageTitle>
+<PageTitle>@PageHeading · Growth Inspector</PageTitle>
+
+<nav class="breadcrumb" aria-label="面包屑">
+    <a href="@ChecklistsHref">检查单</a>
+    <span class="breadcrumb__sep" aria-hidden="true">/</span>
+    <span>编辑</span>
+</nav>
+
+<header class="page-head">
+    <div class="page-head__main">
+        <p class="kicker">体系 · 检查单</p>
+        <h1 class="page-title">@PageHeading</h1>
+        @if (checklist is not null)
+        {
+            <p class="page-meta">
+                <span>@checklist.ProjectName</span>
+                <span>@DisplayText.FrequencyText(checklist.Frequency)</span>
+                <span>@(isEnabled ? "已启用" : "已停用")</span>
+                <span>
+                    @if (isArchived)
+                    {
+                        <span class="chip">已归档</span>
+                    }
+                    else
+                    {
+                        <span class="chip chip--ok">启用</span>
+                    }
+                </span>
+            </p>
+        }
+    </div>
+    <div class="page-head__actions">
+        <a class="btn btn--quiet" href="@ChecklistsHref">返回列表</a>
+        @if (checklist is not null)
+        {
+            <button type="button" class="btn btn--quiet" @onclick="ToggleArchivedAsync">
+                @(isArchived ? "取消归档" : "归档")
+            </button>
+        }
+    </div>
+</header>
+
+<p class="page-lede">
+    结构化断言由框架复核，agent 只负责取证：断言成立 = Ok，不成立 = 异常；断言字段全部留空表示信息型，只收集证据、不参与告警。
+</p>
 
 @if (!loaded)
 {
-    <p class="muted">加载中…</p>
+    <p class="note">加载中…</p>
 }
 else if (checklist is null)
 {
-    <h1>编辑检查单</h1>
-    <p class="error-text">@statusMessage</p>
+    <div class="empty">
+        <span class="empty__glyph" aria-hidden="true">◇</span>
+        <h2 class="empty__title">检查单不存在</h2>
+        <p class="empty__copy">@statusMessage</p>
+        <p class="empty__copy"><a href="@ChecklistsHref">返回检查单列表</a></p>
+    </div>
 }
 else
 {
-    <h1>编辑检查单</h1>
-    <p class="page-subtitle">
-        项目：@checklist.ProjectName
-        <span class="badge">@(checklist.IsArchived ? "已归档" : "启用")</span>
-        ｜结构化断言由框架复核，agent 只负责取证。
-    </p>
-
-    <div class="panel">
-        <div class="form-row">
-            <label>
-                名称
-                <input @bind="name" />
-            </label>
-            <label>
-                频率
-                <select @bind="frequencyText">
-                    <option value="Manual">手动</option>
-                    <option value="Hourly">每小时</option>
-                    <option value="Daily">每天</option>
-                </select>
-            </label>
-            <label class="checkbox-line">
-                <input type="checkbox" @bind="isEnabled" /> 启用
-            </label>
-            <button @onclick="ToggleArchivedAsync">@(isArchived ? "取消归档" : "归档")</button>
+    <section class="section" aria-labelledby="s-basic">
+        <div class="section__head">
+            <span class="section__index">§ 01</span>
+            <h2 class="section__title" id="s-basic">基本信息</h2>
+            <span class="section__meta">@DisplayText.FrequencyText(checklist.Frequency)</span>
         </div>
-        <label>
-            说明
-            <textarea rows="2" @bind="description"></textarea>
-        </label>
-    </div>
-
-    <div class="panel">
-        <h2>检查项</h2>
-        <p class="muted">
-            判定型检查项声明结构化断言（工具名 / 参数模板 / 取值路径 / 比较符 / 阈值 / 窗口 / 级别 / RuleVersion）。
-            <strong>断言成立 = 健康（Ok），不成立 = 异常。</strong>
-            断言字段全部留空表示信息型，只收集证据、不参与告警。
-        </p>
-
-        @foreach (var item in itemDrafts)
-        {
-            <div class="panel" style="margin-top:12px;">
+        <div class="section__body">
+            <div class="panel">
                 <div class="form-row">
-                    <label style="flex:2;">检查项名称<input @bind="item.Title" /></label>
-                    <label>
-                        严重级别
-                        <select @bind="item.SeverityText">
-                            <option value="">（信息型）</option>
-                            <option value="Info">Info</option>
-                            <option value="Warning">Warning</option>
-                            <option value="Critical">Critical</option>
+                    <label class="field">
+                        <span class="field__label">名称</span>
+                        <input class="input" @bind="name" />
+                    </label>
+                    <label class="field">
+                        <span class="field__label">频率</span>
+                        <select class="select" @bind="frequencyText">
+                            <option value="Manual">手动</option>
+                            <option value="Hourly">每小时</option>
+                            <option value="Daily">每天</option>
                         </select>
                     </label>
-                    <label>
-                        RuleVersion
-                        <input type="number" @bind="item.RuleVersion" placeholder="@item.LoadedRuleVersion" />
-                    </label>
-                    <button class="danger" @onclick="() => RemoveItem(item)">删除</button>
-                </div>
-                <div class="form-row">
-                    <label style="flex:1;">工具名<input @bind="item.ToolName" placeholder="如 mock__QueryMetric" /></label>
-                    <label style="flex:1;">取值路径<input @bind="item.ValuePath" placeholder="$.value" /></label>
-                    <label>
-                        比较符
-                        <select @bind="item.OperatorText">
-                            <option value="">（信息型）</option>
-                            <option value="Lt">&lt; 阈值</option>
-                            <option value="Lte">&lt;= 阈值</option>
-                            <option value="Gt">&gt; 阈值</option>
-                            <option value="Gte">&gt;= 阈值</option>
-                            <option value="Eq">== 阈值</option>
-                            <option value="Ne">!= 阈值</option>
-                            <option value="Contains">包含阈值</option>
-                            <option value="NotContains">不包含阈值</option>
-                        </select>
-                    </label>
-                    <label>阈值<input @bind="item.Threshold" /></label>
-                    <label>窗口<input @bind="item.Window" placeholder="1h / 24h" /></label>
+                    <div class="field">
+                        <span class="field__label">启用</span>
+                        <label class="checkbox-line">
+                            <input type="checkbox" @bind="isEnabled" /> 启用该检查单
+                        </label>
+                    </div>
                 </div>
                 <div class="form-col">
-                    <label>
-                        参数模板（JSON 对象）
-                        <textarea rows="2" @bind="item.ArgumentsTemplate" placeholder="{&quot;metric&quot;:&quot;http_p99_latency_ms&quot;}"></textarea>
+                    <label class="field">
+                        <span class="field__label">说明</span>
+                        <textarea class="textarea" rows="2" @bind="description"></textarea>
                     </label>
-                    <label>数据源提示<input @bind="item.DataSourceHint" /></label>
-                    <label>预期<input @bind="item.Expectation" /></label>
                 </div>
-                <p class="muted">
-                    当前规则版本 v@item.LoadedRuleVersion；RuleVersion 留空时，判据变化会自动 +1。
-                    断言成立 = 健康（Ok），不成立 = 异常。
-                </p>
             </div>
-        }
-        <button @onclick="AddItem">新增检查项</button>
-    </div>
+        </div>
+    </section>
 
-    <div class="panel">
-        <h2>引用的运维手册（同项目、未归档、专用）</h2>
-        @if (availableRunbooks.Count == 0)
-        {
-            <p class="muted">同项目下还没有可引用的专用手册，请先到 <a href="/runbooks">运维手册</a> 创建。</p>
-        }
-        else
-        {
-            @foreach (var runbook in availableRunbooks)
-            {
-                <label class="checkbox-line">
-                    <input type="checkbox"
-                           checked="@selectedRunbookIds.Contains(runbook.Id)"
-                           @onchange="e => ToggleRunbook(runbook.Id, e)" />
-                    @runbook.Title
-                    <span class="badge">@(runbook.Kind == RunbookKind.General ? "通用" : "专用")</span>
-                </label>
-            }
-        }
-        <p class="muted">通用手册会自动注入该项目下所有检查单，不需要在这里引用。</p>
-    </div>
+    <section class="section" aria-labelledby="s-items">
+        <div class="section__head">
+            <span class="section__index">§ 02</span>
+            <h2 class="section__title" id="s-items">检查项</h2>
+            <span class="section__meta">@itemDrafts.Count 个检查项</span>
+        </div>
+        <div class="section__body">
+            <div class="panel">
+                <p class="panel__copy">
+                    判定型检查项声明结构化断言（工具名 / 参数模板 / 取值路径 / 比较符 / 阈值 / 窗口 / 级别 / RuleVersion）。
+                    <strong>断言成立 = 健康（Ok），不成立 = 异常。</strong>
+                    断言字段全部留空表示信息型，只收集证据、不参与告警。
+                </p>
+                @foreach (var item in itemDrafts)
+                {
+                    <div class="item-block">
+                        <div class="item-block__head">
+                            <span class="item-block__index">检查项 @(itemDrafts.IndexOf(item) + 1)</span>
+                            <button type="button" class="btn btn--quiet" @onclick="() => RemoveItem(item)">删除</button>
+                        </div>
+                        <div class="form-row">
+                            <label class="field field--wide">
+                                <span class="field__label">检查项名称</span>
+                                <input class="input" @bind="item.Title" />
+                            </label>
+                            <label class="field">
+                                <span class="field__label">严重级别</span>
+                                <select class="select" @bind="item.SeverityText">
+                                    <option value="">（信息型）</option>
+                                    <option value="Info">Info</option>
+                                    <option value="Warning">Warning</option>
+                                    <option value="Critical">Critical</option>
+                                </select>
+                            </label>
+                            <label class="field">
+                                <span class="field__label">RuleVersion</span>
+                                <input class="input" type="number" @bind="item.RuleVersion" placeholder="@item.LoadedRuleVersion" />
+                            </label>
+                        </div>
+                        <div class="form-row">
+                            <label class="field">
+                                <span class="field__label">工具名</span>
+                                <input class="input" @bind="item.ToolName" placeholder="如 mock__QueryMetric" />
+                            </label>
+                            <label class="field">
+                                <span class="field__label">取值路径</span>
+                                <input class="input" @bind="item.ValuePath" placeholder="$.value" />
+                            </label>
+                            <label class="field">
+                                <span class="field__label">比较符</span>
+                                <select class="select" @bind="item.OperatorText">
+                                    <option value="">（信息型）</option>
+                                    <option value="Lt">&lt; 阈值</option>
+                                    <option value="Lte">&lt;= 阈值</option>
+                                    <option value="Gt">&gt; 阈值</option>
+                                    <option value="Gte">&gt;= 阈值</option>
+                                    <option value="Eq">== 阈值</option>
+                                    <option value="Ne">!= 阈值</option>
+                                    <option value="Contains">包含阈值</option>
+                                    <option value="NotContains">不包含阈值</option>
+                                </select>
+                            </label>
+                            <label class="field">
+                                <span class="field__label">阈值</span>
+                                <input class="input" @bind="item.Threshold" />
+                            </label>
+                            <label class="field">
+                                <span class="field__label">窗口</span>
+                                <input class="input" @bind="item.Window" placeholder="1h / 24h" />
+                            </label>
+                        </div>
+                        <div class="form-col">
+                            <label class="field">
+                                <span class="field__label">参数模板（JSON 对象）</span>
+                                <textarea class="textarea textarea--code" rows="2" @bind="item.ArgumentsTemplate" placeholder="@("{'metric':'http_p99_latency_ms'}")"></textarea>
+                            </label>
+                            <label class="field">
+                                <span class="field__label">数据源提示</span>
+                                <input class="input" @bind="item.DataSourceHint" />
+                            </label>
+                            <label class="field">
+                                <span class="field__label">预期</span>
+                                <input class="input" @bind="item.Expectation" />
+                            </label>
+                        </div>
+                        <p class="note">
+                            当前规则版本 v@(item.LoadedRuleVersion)；RuleVersion 留空时，判据变化会自动 +1。
+                        </p>
+                    </div>
+                }
+                <div class="actions">
+                    <button type="button" class="btn" @onclick="AddItem">新增检查项</button>
+                </div>
+            </div>
+        </div>
+    </section>
 
-    <div class="form-row">
-        <button class="primary" @onclick="SaveAsync">保存</button>
-        <label>
-            执行环境
-            <select @bind="runEnvironmentId">
+    <section class="section" aria-labelledby="s-runbooks">
+        <div class="section__head">
+            <span class="section__index">§ 03</span>
+            <h2 class="section__title" id="s-runbooks">引用手册</h2>
+            <span class="section__meta">@selectedRunbookIds.Count 份已引用</span>
+        </div>
+        <div class="section__body">
+            <div class="panel">
+                <p class="panel__copy">
+                    同项目、未归档、专用手册；通用手册会自动注入该项目下所有检查单，不需要在这里引用。
+                </p>
+                @if (availableRunbooks.Count == 0)
+                {
+                    <p class="panel__copy">同项目下还没有可引用的专用手册，请先到 <a href="@RunbooksHref">运维手册</a> 创建。</p>
+                }
+                else
+                {
+                    <div class="check-list">
+                        @foreach (var runbook in availableRunbooks)
+                        {
+                            <label class="checkbox-line">
+                                <input type="checkbox"
+                                       checked="@selectedRunbookIds.Contains(runbook.Id)"
+                                       @onchange="e => ToggleRunbook(runbook.Id, e)" />
+                                <span>@runbook.Title</span>
+                                <span class="chip">@DisplayText.RunbookKindText(runbook.Kind)</span>
+                            </label>
+                        }
+                    </div>
+                }
+            </div>
+        </div>
+    </section>
+
+    <div class="actions">
+        <button type="button" class="btn btn--primary" @onclick="SaveAsync">保存</button>
+        <div class="field">
+            <span class="field__label">执行环境</span>
+            <select class="select" @bind="runEnvironmentId">
                 @foreach (var environment in environments)
                 {
                     <option value="@environment.Id">@environment.Name</option>
                 }
             </select>
-        </label>
-        <button @onclick="RunNowAsync" disabled="@isArchived">立即运行</button>
-        <span class="muted">@statusMessage</span>
+        </div>
+        <button type="button" class="btn" @onclick="RunNowAsync" disabled="@isArchived">立即运行</button>
+        <span class="note">@statusMessage</span>
     </div>
 }
 
@@ -202,6 +302,7 @@ else
         };
     }
 
+    private WorkspaceContext workspace = WorkspaceContext.Empty;
     private bool loaded;
     private ChecklistView? checklist;
     private string name = "";
@@ -217,9 +318,27 @@ else
     private string runEnvironmentId = "";
     private string? statusMessage;
 
+    private string ContextQuery => workspace.QuerySuffix;
+    private string ChecklistsHref => $"/checklists{ContextQuery}";
+    private string RunbooksHref => $"/runbooks{ContextQuery}";
+    private string PageHeading => string.IsNullOrWhiteSpace(checklist?.Name) ? "编辑检查单" : checklist!.Name;
+
     protected override async Task OnParametersSetAsync()
     {
+        await ResolveWorkspaceAsync();
         await LoadAsync();
+    }
+
+    private async Task ResolveWorkspaceAsync()
+    {
+        try
+        {
+            workspace = await Workspace.ResolveAsync(WorkspaceContextService.ReadQueryValue(Nav));
+        }
+        catch
+        {
+            workspace = WorkspaceContext.Empty;
+        }
     }
 
     private async Task LoadAsync()
@@ -263,6 +382,10 @@ else
         catch (ManagementException ex)
         {
             statusMessage = ex.Message;
+        }
+        catch (Exception ex)
+        {
+            statusMessage = $"加载失败：{ex.Message}";
         }
 
         loaded = true;

@@ -2,7 +2,7 @@
 @inject WorkspaceContextService Workspace
 @inject NavigationManager Nav
 
-<div class="ds">
+<div class="app">
     <a class="skip" href="#main">跳到正文</a>
 
     <header class="masthead">
@@ -20,12 +20,12 @@
             </a>
 
             <nav class="nav" aria-label="主导航">
-                <NavLink class="nav__link" ActiveClass="is-current" href="@HomeHref" Match="NavLinkMatch.All">总览</NavLink>
-                <NavLink class="nav__link" ActiveClass="is-current" href="@FindingsHref">异常</NavLink>
-                <NavLink class="nav__link" ActiveClass="is-current" href="@RunsHref">执行</NavLink>
-                <NavLink class="nav__link" ActiveClass="is-current" href="@ReportsHref">报告</NavLink>
-                <NavLink class="nav__link" ActiveClass="is-current" href="@SystemsHref">体系</NavLink>
-                <NavLink class="nav__link" ActiveClass="is-current" href="@SettingsHref">设置</NavLink>
+                <a class="@NavClass("/")" href="@HomeHref">总览</a>
+                <a class="@NavClass("/findings")" href="@FindingsHref">异常</a>
+                <a class="@NavClass("/runs")" href="@RunsHref">执行</a>
+                <a class="@NavClass("/reports")" href="@ReportsHref">报告</a>
+                <a class="@NavClass("/systems")" href="@SystemsHref">体系</a>
+                <a class="@NavClass("/settings")" href="@SettingsHref">设置</a>
             </nav>
 
             <div class="masthead__context">
@@ -67,6 +67,12 @@
             <span><a href="@StyleguideHref">视觉规范</a> · 冻结稿 · 2026-11-04</span>
         </div>
     </footer>
+
+    <div id="blazor-error-ui" data-nosnippet>
+        页面发生未处理异常。
+        <a href="." class="reload">重新加载</a>
+        <span class="dismiss">🗙</span>
+    </div>
 </div>
 
 @code {
@@ -77,7 +83,7 @@
     private string FindingsHref => $"/findings{contextQuery}";
     private string RunsHref => $"/runs{contextQuery}";
     private string ReportsHref => $"/reports{contextQuery}";
-    private string SystemsHref => $"/runbooks{contextQuery}";
+    private string SystemsHref => $"/systems{contextQuery}";
     private string SettingsHref => $"/settings{contextQuery}";
     private string ChecklistsHref => $"/checklists{contextQuery}";
     private string StyleguideHref => $"/styleguide{contextQuery}";
@@ -97,5 +103,31 @@
             workspace = WorkspaceContext.Empty;
             contextQuery = string.Empty;
         }
+    }
+
+    /// <summary>
+    /// 导航高亮：体系覆盖 /systems、/runbooks、/checklists 三个入口；
+    /// 其余一级入口按路径前缀匹配，避免子页面（/runs/{id}）丢掉高亮。
+    /// </summary>
+    private string NavClass(string prefix)
+    {
+        var path = $"/{Nav.ToBaseRelativePath(Nav.Uri).Split('?', '#')[0].Trim('/')}";
+        if (path.Length > 1)
+        {
+            path = path.TrimEnd('/');
+        }
+
+        var active = prefix == "/"
+            ? path == "/"
+            : path.StartsWith(prefix, StringComparison.OrdinalIgnoreCase);
+
+        if (prefix == "/systems")
+        {
+            active = active
+                || path.StartsWith("/runbooks", StringComparison.OrdinalIgnoreCase)
+                || path.StartsWith("/checklists", StringComparison.OrdinalIgnoreCase);
+        }
+
+        return active ? "nav__link is-current" : "nav__link";
     }
 }

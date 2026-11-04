@@ -1,78 +1,116 @@
 @page "/runbooks"
+@layout DesignLayout
 @rendermode InteractiveServer
 @inject IManagementService Management
+@inject WorkspaceContextService Workspace
 @inject NavigationManager Nav
 
 <PageTitle>运维手册 · Growth Inspector</PageTitle>
 
-<h1>运维手册</h1>
-<p class="page-subtitle">
-    纯 Markdown 的长期记忆：技术栈、指标语义、告警规则、排查经验。
-    通用手册自动注入同项目下所有检查单；专用手册默认不注入，被检查单显式引用后全文交给 agent。
-    默认只显示未归档手册。
+<header class="page-head">
+    <div class="page-head__main">
+        <p class="kicker">体系 · 运维手册</p>
+        <h1 class="page-title">运维手册</h1>
+        <p class="page-meta">
+            <span>@ScopeLabel</span>
+            <span>@rows.Count 份手册</span>
+            <span>通用 @GeneralCount 份 / 专用 @SpecializedCount 份</span>
+        </p>
+    </div>
+    <div class="page-head__actions">
+        <a class="btn btn--quiet" href="#new-runbook">新建手册</a>
+    </div>
+</header>
+
+<p class="page-lede">
+    纯 Markdown 的长期记忆：技术栈、指标语义、告警规则、排查经验。通用手册自动注入同项目下所有检查单；
+    专用手册默认不注入，被检查单显式引用后全文交给 agent。默认只显示未归档手册。
 </p>
 
 @if (statusMessage is not null)
 {
-    <p class="muted">@statusMessage</p>
+    <p class="alert-line" role="status"><strong>提示</strong><span>@statusMessage</span></p>
 }
 
-<div class="form-row">
+<div class="toolbar">
     <label class="checkbox-line">
         <input type="checkbox" @bind="showArchived" @bind:after="ReloadAsync" /> 显示已归档
     </label>
+    <div class="toolbar__actions">
+        <a class="filter-reset" href="@ChecklistsHref">切到检查单 →</a>
+    </div>
 </div>
 
 @if (rows.Count == 0)
 {
-    <div class="empty">还没有手册，先新建一份。</div>
+    <div class="empty">
+        <span class="empty__glyph" aria-hidden="true">◇</span>
+        <h2 class="empty__title">还没有手册</h2>
+        <p class="empty__copy">先新建一份通用或专用手册；通用手册会自动注入同项目下所有检查单。</p>
+    </div>
 }
 else
 {
-    <table class="data">
-        <thead>
-            <tr>
-                <th>标题</th>
-                <th>项目</th>
-                <th>类别</th>
-                <th>被检查单引用</th>
-                <th>更新时间</th>
-                <th>状态</th>
-                <th></th>
-            </tr>
-        </thead>
-        <tbody>
-            @foreach (var row in rows)
-            {
+    <div class="table-wrap" role="region" aria-label="运维手册列表" tabindex="0">
+        <table class="table table--wide">
+            <caption class="sr-only">运维手册的标题、项目、类别、引用数、更新时间与状态</caption>
+            <thead>
                 <tr>
-                    <td><a href="/runbooks/@row.Id">@row.Title</a></td>
-                    <td>@row.ProjectName</td>
-                    <td><span class="badge">@(row.Kind == RunbookKind.General ? "通用" : "专用")</span></td>
-                    <td>@row.ReferencedByChecklistCount</td>
-                    <td>@row.UpdatedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm")</td>
-                    <td><span class="badge">@(row.IsArchived ? "已归档" : "启用")</span></td>
-                    <td class="actions">
-                        <a href="/runbooks/@row.Id">编辑</a>
-                        <button @onclick="() => ToggleArchivedAsync(row)">@(row.IsArchived ? "取消归档" : "归档")</button>
-                    </td>
+                    <th scope="col">标题</th>
+                    <th scope="col">项目</th>
+                    <th scope="col">类别</th>
+                    <th scope="col" class="num">被引用</th>
+                    <th scope="col" class="num">更新时间</th>
+                    <th scope="col">状态</th>
+                    <th scope="col"><span class="sr-only">操作</span></th>
                 </tr>
-            }
-        </tbody>
-    </table>
+            </thead>
+            <tbody>
+                @foreach (var row in rows)
+                {
+                    <tr>
+                        <td><a class="table__title" href="@RunbookHref(row.Id)">@row.Title</a></td>
+                        <td>@row.ProjectName</td>
+                        <td><span class="chip">@DisplayText.RunbookKindText(row.Kind)</span></td>
+                        <td class="num">@row.ReferencedByChecklistCount</td>
+                        <td class="num">@row.UpdatedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm")</td>
+                        <td>
+                            <span class="status-line">
+                                @if (row.IsArchived)
+                                {
+                                    <span class="chip">已归档</span>
+                                }
+                                else
+                                {
+                                    <span class="chip chip--ok">启用</span>
+                                }
+                            </span>
+                        </td>
+                        <td class="actions">
+                            <a class="btn btn--quiet" href="@RunbookHref(row.Id)">编辑</a>
+                            <button type="button" class="btn btn--quiet" @onclick="() => ToggleArchivedAsync(row)">
+                                @(row.IsArchived ? "取消归档" : "归档")
+                            </button>
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
 }
 
-<div class="panel">
-    <h2>新建手册</h2>
+<div class="panel" id="new-runbook">
+    <h2 class="panel__title">新建手册</h2>
     @if (projects.Count == 0)
     {
-        <p class="muted">还没有项目，请先到 <a href="/settings">设置</a> 创建项目与环境。</p>
+        <p class="panel__copy">还没有项目，请先到 <a href="@SettingsHref">设置</a> 创建项目与环境。</p>
     }
     else
     {
         <div class="form-row">
-            <label>
-                项目
-                <select @bind="newProjectId">
+            <label class="field">
+                <span class="field__label">项目</span>
+                <select class="select" @bind="newProjectId">
                     <option value="">请选择项目</option>
                     @foreach (var project in projects)
                     {
@@ -80,23 +118,26 @@ else
                     }
                 </select>
             </label>
-            <label>
-                标题
-                <input @bind="newTitle" placeholder="如：growth 核心链路巡检" />
+            <label class="field">
+                <span class="field__label">标题</span>
+                <input class="input" @bind="newTitle" placeholder="如：growth 核心链路巡检" />
             </label>
-            <label>
-                类别
-                <select @bind="newKindText">
+            <label class="field">
+                <span class="field__label">类别</span>
+                <select class="select" @bind="newKindText">
                     <option value="Specialized">专用（被引用后注入）</option>
                     <option value="General">通用（自动注入）</option>
                 </select>
             </label>
-            <button class="primary" @onclick="CreateAsync">创建并编辑</button>
+        </div>
+        <div class="actions">
+            <button type="button" class="btn btn--primary" @onclick="CreateAsync">创建并编辑</button>
         </div>
     }
 </div>
 
 @code {
+    private WorkspaceContext workspace = WorkspaceContext.Empty;
     private List<RunbookSummaryView> rows = [];
     private List<ProjectView> projects = [];
     private string newProjectId = "";
@@ -105,21 +146,65 @@ else
     private bool showArchived;
     private string? statusMessage;
 
+    private string ContextQuery => workspace.QuerySuffix;
+    private string ChecklistsHref => $"/checklists{ContextQuery}";
+    private string SettingsHref => $"/settings{ContextQuery}";
+    private string ScopeLabel => workspace.Current is null
+        ? "全部项目"
+        : $"{workspace.Current.ProjectName} · 当前项目";
+    private int GeneralCount => rows.Count(x => x.Kind == RunbookKind.General);
+    private int SpecializedCount => rows.Count(x => x.Kind == RunbookKind.Specialized);
+
     protected override async Task OnInitializedAsync()
     {
+        await ResolveWorkspaceAsync();
+        if (workspace.Current is { } current)
+        {
+            newProjectId = current.ProjectId.ToString();
+        }
+
         await ReloadAsync();
+    }
+
+    private async Task ResolveWorkspaceAsync()
+    {
+        try
+        {
+            workspace = await Workspace.ResolveAsync(WorkspaceContextService.ReadQueryValue(Nav));
+        }
+        catch
+        {
+            workspace = WorkspaceContext.Empty;
+        }
     }
 
     private async Task ReloadAsync()
     {
         try
         {
-            projects = (await Management.ListProjectsAsync(includeArchived: false, limit: 200)).Items.ToList();
-            rows = (await Management.ListRunbooksAsync(includeArchived: showArchived, limit: 200)).Items.ToList();
+            var loadedProjects = (await Management.ListProjectsAsync(includeArchived: false, limit: 200)).Items.ToList();
+            var loadedRunbooks = (await Management.ListRunbooksAsync(
+                projectId: workspace.Current?.ProjectId,
+                includeArchived: showArchived,
+                limit: 200)).Items.ToList();
+
+            // 当前项目存在时，列表与可选项都只保留该项目，避免跨项目串台。
+            if (workspace.Current is { } current)
+            {
+                loadedProjects = loadedProjects.Where(x => x.Id == current.ProjectId).ToList();
+                loadedRunbooks = loadedRunbooks.Where(x => x.ProjectId == current.ProjectId).ToList();
+            }
+
+            projects = loadedProjects;
+            rows = loadedRunbooks;
         }
         catch (ManagementException ex)
         {
             statusMessage = ex.Message;
+        }
+        catch (Exception ex)
+        {
+            statusMessage = $"加载失败：{ex.Message}";
         }
     }
 
@@ -141,7 +226,7 @@ else
 
             var runbookId = await Management.CreateRunbookAsync(
                 new CreateRunbookRequest(projectId, newTitle, Kind: kind));
-            Nav.NavigateTo($"/runbooks/{runbookId}");
+            Nav.NavigateTo(RunbookHref(runbookId));
         }
         catch (ManagementException ex)
         {
@@ -167,4 +252,6 @@ else
             statusMessage = ex.Message;
         }
     }
+
+    private string RunbookHref(Guid id) => $"/runbooks/{id}{ContextQuery}";
 }

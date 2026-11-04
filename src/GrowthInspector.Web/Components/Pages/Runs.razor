@@ -1,127 +1,179 @@
 @page "/runs"
+@layout DesignLayout
 @inject IDbContextFactory<GrowthInspectorDbContext> DbFactory
+@inject WorkspaceContextService Workspace
+@inject NavigationManager Nav
 @using System.Globalization
 
 <PageTitle>执行历史 · Growth Inspector</PageTitle>
 
-<h1>执行历史</h1>
-<p class="page-subtitle">
-    每轮执行都会写入检查单快照、检查项结果与工具调用审计，可按检查单、状态与开始时间回溯。
-    状态包含 Succeeded / Failed / Canceled / Skipped 等；已归档的检查单与环境不会从历史中消失。
-</p>
-
-<form class="form-row filter-bar" method="get" action="/runs">
-    <label>
-        检查单
-        <select name="checklist">
-            <option value="">全部检查单</option>
-            @foreach (var option in checklistOptions)
+<header class="page-head">
+    <div class="page-head__main">
+        <p class="kicker">执行 · Runs</p>
+        <h1 class="page-title">执行历史</h1>
+        <p class="page-meta">
+            @if (workspace.Current is { } current)
             {
-                <option value="@option.Id" selected="@(checklistFilter == option.Id.ToString())">@option.Name@(option.Archived ? "（已归档）" : "")</option>
+                <span>@current.ProjectName · @current.EnvironmentName</span>
+                <span>最近执行 @(latestRunAt is { } latest ? latest.ToLocalTime().ToString("yyyy-MM-dd HH:mm") : "尚无")</span>
+                <span>@totalRuns 条记录</span>
             }
-        </select>
-    </label>
-    <label>
-        状态
-        <select name="status">
-            <option value="">全部状态</option>
-            @foreach (var status in Enum.GetValues<RunStatus>())
+            else
             {
-                <option value="@status" selected="@(statusFilter == status.ToString())">@StatusText(status)</option>
+                <span>未选择项目 / 环境</span>
             }
-        </select>
-    </label>
-    <label>
-        开始日期（起）
-        <input type="date" name="from" value="@fromFilter" />
-    </label>
-    <label>
-        开始日期（止）
-        <input type="date" name="to" value="@toFilter" />
-    </label>
-    <button type="submit" class="primary">筛选</button>
-    <a class="filter-reset" href="/runs">重置</a>
-</form>
+        </p>
+    </div>
+    <div class="page-head__actions">
+        <a class="btn btn--quiet" href="@FindingsHref">异常</a>
+        <a class="btn btn--primary" href="@ChecklistsHref">立即巡检</a>
+    </div>
+</header>
 
 @if (loadError is not null)
 {
-    <p class="error-text">加载失败：@loadError</p>
+    <p class="alert-line" role="alert"><strong>加载失败</strong><span>@loadError</span></p>
 }
-
-@if (rows.Count == 0)
+else if (workspace.Current is null)
 {
-    @if (HasActiveFilter)
-    {
-        <div class="empty">没有符合筛选条件的执行记录。<a href="/runs">清除筛选</a></div>
-    }
-    else if (!hasAnyRun)
-    {
-        <div class="empty">还没有执行记录。在检查单编辑页点击「立即运行」即可产生第一轮。</div>
-    }
-    else
-    {
-        <div class="empty">没有可展示的执行记录。</div>
-    }
+    <div class="empty" style="margin-top: 40px;">
+        <span class="empty__glyph" aria-hidden="true">◇</span>
+        <h2 class="empty__title">还没有项目 / 环境</h2>
+        <p class="empty__copy">
+            执行历史按环境归档；先到 <a href="@SettingsHref">设置</a> 创建项目与环境，再触发第一轮巡检。
+        </p>
+    </div>
 }
 else
 {
-    @if (HasActiveFilter)
-    {
-        <p class="muted">筛选结果 @rows.Count 条。@(rows.Count >= MaxRows ? "（仅展示最近 200 条）" : "")</p>
-    }
-    else if (rows.Count >= MaxRows)
-    {
-        <p class="muted">仅展示最近 200 条执行记录，可用筛选缩小范围。</p>
-    }
-
-    <div class="table-scroll">
-        <table class="data wide">
-            <thead>
-                <tr>
-                    <th>检查单</th>
-                    <th>环境</th>
-                    <th>状态</th>
-                    <th>开始时间</th>
-                    <th>完成时间</th>
-                    <th>耗时</th>
-                    <th>Token（prompt / completion）</th>
-                    <th>触发方式</th>
-                    <th></th>
-                </tr>
-            </thead>
-            <tbody>
-                @foreach (var row in rows)
+    <form class="toolbar" method="get">
+        <input type="hidden" name="workspace" value="@workspace.Current?.Key" />
+        <label class="filter">
+            <span class="filter__label">检查单</span>
+            <select class="select" name="checklist">
+                <option value="">全部检查单</option>
+                @foreach (var option in checklistOptions)
                 {
-                    <tr>
-                        <td>
-                            <a href="/runs/@row.Id">@NameOrMissing(row.ChecklistName)</a>
-                            @if (row.ChecklistArchived)
-                            {
-                                <span class="badge archived">已归档</span>
-                            }
-                        </td>
-                        <td>
-                            @NameOrMissing(row.EnvironmentName)
-                            @if (row.EnvironmentArchived)
-                            {
-                                <span class="badge archived">已归档</span>
-                            }
-                        </td>
-                        <td><span class="@StatusClass(row.Status)">@StatusText(row.Status)</span></td>
-                        <td class="narrow-num">@row.StartedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss")</td>
-                        <td class="narrow-num">@(row.CompletedAt is { } completed ? completed.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss") : "-")</td>
-                        <td class="narrow-num">@FormatDuration(row.DurationMs)</td>
-                        <td class="narrow-num">
-                            <strong>@(row.PromptTokens + row.CompletionTokens)</strong>
-                            <span class="muted">（@row.PromptTokens / @row.CompletionTokens）</span>
-                        </td>
-                        <td>@TriggerText(row.Trigger)</td>
-                        <td class="actions"><a href="/runs/@row.Id">详情</a></td>
-                    </tr>
+                    <option value="@option.Id" selected="@(checklistFilter == option.Id.ToString())">@option.Name@(option.Archived ? "（已归档）" : "")</option>
                 }
-            </tbody>
-        </table>
-    </div>
+            </select>
+        </label>
+        <label class="filter">
+            <span class="filter__label">状态</span>
+            <select class="select" name="status">
+                <option value="">全部状态</option>
+                @foreach (var status in Enum.GetValues<RunStatus>())
+                {
+                    <option value="@status" selected="@(statusFilter == status.ToString())">@StatusPresenter.FromRun(status).Label</option>
+                }
+            </select>
+        </label>
+        <label class="filter">
+            <span class="filter__label">开始日期（起）</span>
+            <input class="input" type="date" name="from" value="@fromFilter" />
+        </label>
+        <label class="filter">
+            <span class="filter__label">开始日期（止）</span>
+            <input class="input" type="date" name="to" value="@toFilter" />
+        </label>
+        <div class="toolbar__actions">
+            <button class="btn btn--primary" type="submit">筛选</button>
+            <a class="filter-reset" href="@RunsHref">重置</a>
+        </div>
+    </form>
+
+    <section class="section" aria-labelledby="s-runs">
+        <div class="section__head">
+            <span class="section__index">§ 01</span>
+            <h2 class="section__title" id="s-runs">执行记录</h2>
+            <span class="section__meta">@SectionMeta</span>
+        </div>
+        <div class="section__body">
+            @if (rows.Count == 0)
+            {
+                @if (HasActiveFilter)
+                {
+                    <div class="empty">
+                        <span class="empty__glyph" aria-hidden="true">◇</span>
+                        <h3 class="empty__title">没有符合筛选条件的执行记录</h3>
+                        <p class="empty__copy">调整检查单、状态或日期范围后重试。<a href="@RunsHref">清除筛选</a></p>
+                    </div>
+                }
+                else if (!hasAnyRun)
+                {
+                    <div class="empty">
+                        <span class="empty__glyph" aria-hidden="true">◇</span>
+                        <h3 class="empty__title">还没有执行记录</h3>
+                        <p class="empty__copy">
+                            先到 <a href="@ChecklistsHref">检查单</a> 手动触发一次执行；执行结束后这里会列出每一轮。
+                        </p>
+                    </div>
+                }
+                else
+                {
+                    <div class="empty">
+                        <span class="empty__glyph" aria-hidden="true">◇</span>
+                        <h3 class="empty__title">没有可展示的执行记录</h3>
+                        <p class="empty__copy">当前环境暂时没有可展示的执行记录。</p>
+                    </div>
+                }
+            }
+            else
+            {
+                @if (HasActiveFilter)
+                {
+                    <p class="note">筛选结果 @rows.Count 条。@(rows.Count >= MaxRows ? "（仅展示最近 200 条）" : "")</p>
+                }
+                else if (rows.Count >= MaxRows)
+                {
+                    <p class="note">仅展示最近 200 条执行记录，可用筛选缩小范围。</p>
+                }
+
+                <div class="table-wrap" role="region" aria-label="执行记录" tabindex="0">
+                    <table class="table table--wide">
+                        <caption class="sr-only">执行记录：开始时间、检查单、状态、耗时、Token 与触发方式</caption>
+                        <thead>
+                            <tr>
+                                <th scope="col">开始时间</th>
+                                <th scope="col">检查单</th>
+                                <th scope="col">状态</th>
+                                <th scope="col" class="num">耗时</th>
+                                <th scope="col" class="num">Token（prompt / completion）</th>
+                                <th scope="col">触发方式</th>
+                                <th scope="col"><span class="sr-only">操作</span></th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var row in rows)
+                            {
+                                <tr>
+                                    <td class="mono">@row.StartedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss")</td>
+                                    <td>
+                                        <a class="table__title" href="@DetailHref(row.Id)">@DisplayText.NameOrMissing(row.ChecklistName)</a>
+                                        @if (row.ChecklistArchived)
+                                        {
+                                            <span class="chip">已归档</span>
+                                        }
+                                        <span class="table__sub">
+                                            @DisplayText.NameOrMissing(row.EnvironmentName)@(row.EnvironmentArchived ? " · 已归档" : "")
+                                        </span>
+                                    </td>
+                                    <td><StatusBadge Value="@StatusPresenter.FromRun(row.Status)" /></td>
+                                    <td class="num">@DisplayText.FormatDuration(row.DurationMs)</td>
+                                    <td class="num">
+                                        @(row.PromptTokens + row.CompletionTokens)
+                                        <span class="table__sub">@row.PromptTokens / @row.CompletionTokens</span>
+                                    </td>
+                                    <td>@DisplayText.TriggerText(row.Trigger)</td>
+                                    <td class="actions"><a class="btn btn--quiet" href="@DetailHref(row.Id)">详情</a></td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            }
+        </div>
+    </section>
 }
 
 @code {
@@ -149,20 +201,28 @@ else
         bool EnvironmentArchived,
         RunStatus Status,
         DateTimeOffset StartedAt,
-        DateTimeOffset? CompletedAt,
         long DurationMs,
         int PromptTokens,
         int CompletionTokens,
         ChecklistTrigger Trigger);
 
+    private WorkspaceContext workspace = WorkspaceContext.Empty;
     private List<ChecklistOption> checklistOptions = [];
     private List<Row> rows = [];
     private bool hasAnyRun;
+    private int totalRuns;
+    private DateTimeOffset? latestRunAt;
     private string? loadError;
     private string checklistFilter = string.Empty;
     private string statusFilter = string.Empty;
     private string fromFilter = string.Empty;
     private string toFilter = string.Empty;
+
+    private string ContextQuery => workspace.QuerySuffix;
+    private string RunsHref => $"/runs{ContextQuery}";
+    private string FindingsHref => $"/findings{ContextQuery}";
+    private string ChecklistsHref => $"/checklists{ContextQuery}";
+    private string SettingsHref => $"/settings{ContextQuery}";
 
     private bool HasActiveFilter =>
         !string.IsNullOrEmpty(checklistFilter)
@@ -170,28 +230,52 @@ else
         || !string.IsNullOrEmpty(fromFilter)
         || !string.IsNullOrEmpty(toFilter);
 
+    private string SectionMeta => HasActiveFilter
+        ? $"筛选 {rows.Count} 条 / 共 {totalRuns} 条"
+        : $"{totalRuns} 条 · 最多展示 {MaxRows} 条";
+
+    private string DetailHref(Guid runId) => $"/runs/{runId}{ContextQuery}";
+
     protected override async Task OnInitializedAsync()
     {
         ParseFilters();
         try
         {
+            workspace = await Workspace.ResolveAsync(WorkspaceContextService.ReadQueryValue(Nav));
+            if (workspace.Current is null)
+            {
+                return;
+            }
+
+            var current = workspace.Current;
             await using var db = await DbFactory.CreateDbContextAsync();
 
             checklistOptions = await db.Checklists
+                .Where(x => x.ProjectId == current.ProjectId)
                 .OrderBy(x => x.Name)
                 .Select(x => new ChecklistOption(x.Id, x.Name, x.IsArchived))
                 .AsNoTracking()
                 .ToListAsync();
+
+            var scopedRuns = db.ChecklistRuns
+                .Where(x => x.EnvironmentId == current.EnvironmentId)
+                .AsNoTracking();
+
+            hasAnyRun = await scopedRuns.AnyAsync();
+            totalRuns = await scopedRuns.CountAsync();
+            latestRunAt = await scopedRuns
+                .OrderByDescending(x => x.StartedAt)
+                .Select(x => (DateTimeOffset?)x.StartedAt)
+                .FirstOrDefaultAsync();
 
             var from = ParseDate(fromFilter);
             var to = ParseDate(toFilter);
             var checklistId = ParseGuid(checklistFilter);
             var status = ParseStatus(statusFilter);
 
-            IQueryable<ChecklistRun> query = db.ChecklistRuns
+            IQueryable<ChecklistRun> query = scopedRuns
                 .Include(x => x.Checklist)
-                .Include(x => x.Environment)
-                .AsNoTracking();
+                .Include(x => x.Environment);
 
             if (checklistId is { } id)
             {
@@ -228,13 +312,10 @@ else
                 x.Environment?.IsArchived ?? false,
                 x.Status,
                 x.StartedAt,
-                x.CompletedAt,
                 x.DurationMs,
                 x.PromptTokens,
                 x.CompletionTokens,
                 x.Trigger)).ToList();
-
-            hasAnyRun = await db.ChecklistRuns.AsNoTracking().AnyAsync();
         }
         catch (Exception ex)
         {
@@ -268,39 +349,4 @@ else
         var local = date.ToDateTime(TimeOnly.MinValue);
         return new DateTimeOffset(local, TimeZoneInfo.Local.GetUtcOffset(local));
     }
-
-    private static string NameOrMissing(string? name)
-        => string.IsNullOrWhiteSpace(name) ? "(已归档/已删除)" : name;
-
-    private static string StatusText(RunStatus status) => status switch
-    {
-        RunStatus.Pending => "等待中",
-        RunStatus.Running => "执行中",
-        RunStatus.Succeeded => "成功",
-        RunStatus.Failed => "失败",
-        RunStatus.Canceled => "已取消",
-        RunStatus.Skipped => "已跳过",
-        _ => status.ToString(),
-    };
-
-    private static string StatusClass(RunStatus status) => status switch
-    {
-        RunStatus.Pending => "badge status-pending",
-        RunStatus.Running => "badge status-running",
-        RunStatus.Succeeded => "badge status-succeeded",
-        RunStatus.Failed => "badge status-failed",
-        RunStatus.Canceled => "badge status-canceled",
-        RunStatus.Skipped => "badge status-skipped",
-        _ => "badge",
-    };
-
-    private static string TriggerText(ChecklistTrigger trigger)
-        => trigger == ChecklistTrigger.Schedule ? "调度" : "手动";
-
-    private static string FormatDuration(long milliseconds) => milliseconds switch
-    {
-        <= 0 => "-",
-        < 1000 => $"{milliseconds} ms",
-        _ => $"{milliseconds / 1000d:0.0} s",
-    };
 }

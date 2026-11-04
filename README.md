@@ -54,14 +54,17 @@ seed/growth/                       通用 / 专用手册、检查单、mock MCP 
 docs/inspection-knowledge.md       A/B/C 判据 → 手册 → 检查单 / 检查项的映射说明
 ```
 
-## 设计系统（进行中）
+## 设计系统（全站已迁移）
 
 - `/styleguide`：C 留白冻结稿（丝绸灰 / 玄色，烟墨 / 月白），含色板、字体、五态、表格、集群节点、证据与空态。
-- `/` 总览已迁到新壳：`DesignLayout`（项目/环境上下文、主题切换、总览/异常/执行/报告/体系/设置）+ `StatusPresenter` 单一状态映射；
-  集群结论 → 服务/依赖网格 → 需要处理 → 最近执行，全部读真实库。节点以执行快照的期望检查项为准，缺失结果按「待证 · 无结果」；
-  只有 `Succeeded` + 结果完整 + 无未恢复 Finding 才显示全清。
-- `/styleguide` 与 `/` 使用新设计系统（`wwwroot/css/design-system.css` + `DesignLayout`）；其余页面仍在旧 UI（`MainLayout`），后续按 IA 迁移。
-- 视觉决策与规范：`docs/visual-style/style-spec.md`；静态样张：`docs/visual-style/index.html`。
+- 全站统一 `DesignLayout`（项目/环境上下文、主题切换、`总览 / 异常 / 执行 / 报告 / 体系 / 设置`）与
+  `wwwroot/css/design-system.css`（token 挂 `:root`，页面底纹 + `paper-raised` 内容纸）；旧 `MainLayout` / `app.css` 页面样式已删除。
+- 结果页：`/` 总览（集群结论 → 服务/依赖网格 → 需要处理 → 最近执行）、`/findings`（4 KPI → 未恢复/已恢复 → 待证观察 → 健康态）、
+  `/runs` + `/runs/{id}`（运行头 + 判定 meter → 检查项折叠 → 工具调用 → 观察 → 快照 → 通知/摘要）、`/reports`（日报 + 发送留痕）。
+- 配置页：`/systems`（体系落地页：知识资产 / 检查单 / MCP / 项目环境）→ `/runbooks`、`/checklists`（含编辑页）、`/settings`。
+- 状态只经 `StatusPresenter`（五态 + Running；`Succeeded = 完成`，`Error / Mismatch / 证据不足 = 待证`，朱红只给 Critical）；
+  跨页文案收敛到 `DisplayText`，执行判定分布收敛到 `RunVerdictBuilder`。
+- 设计规范与页面模式：`docs/visual-style/style-spec.md`、`docs/visual-style/page-patterns.md`；静态样张：`docs/visual-style/index.html`。
 
 ## 运行
 

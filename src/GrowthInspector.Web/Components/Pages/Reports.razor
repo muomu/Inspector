@@ -1,180 +1,256 @@
 @page "/reports"
+@layout DesignLayout
 @rendermode InteractiveServer
 @inject IDbContextFactory<GrowthInspectorDbContext> DbFactory
 @inject DailyReportService ReportService
 @using System.Text.Json
 
-<PageTitle>日报 · Growth Inspector</PageTitle>
+<PageTitle>报告 · Growth Inspector</PageTitle>
 
-<h1>巡检日报</h1>
-<p class="page-subtitle">
-    每天 10:00 生成一份 AiSummary(DailyReport)，发送留痕写入 LarkNotification（v1 走 mock 通道）。
-    每份日报下方给出当日执行状态与观察项统计，便于把摘要内容与真实数据对照。
-</p>
-
-<div class="form-row">
-    <button class="primary" @onclick="GenerateAsync">生成今日日报</button>
-    <span class="muted">@statusMessage</span>
-</div>
-
-@if (loadError is not null)
-{
-    <p class="error-text">加载失败：@loadError</p>
-}
-
-<h2 class="section-title">最近日报发送留痕</h2>
-@if (recentNotifications.Count == 0)
-{
-    <p class="muted">还没有 DailyReport 类型的 LarkNotification；日报发送链路由日报任务接入后写入。</p>
-}
-else
-{
-    <div class="table-scroll">
-        <table class="data wide">
-            <thead>
-                <tr>
-                    <th>发送时间</th>
-                    <th>项目</th>
-                    <th>通道</th>
-                    <th>结果</th>
-                    <th>失败原因</th>
-                    <th>报文预览</th>
-                </tr>
-            </thead>
-            <tbody>
-                @foreach (var notice in recentNotifications)
-                {
-                    <tr>
-                        <td class="narrow-num">@notice.Notification.CreatedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss")</td>
-                        <td>
-                            @(string.IsNullOrWhiteSpace(notice.ProjectName) ? "(已归档/已删除)" : notice.ProjectName)
-                            @if (notice.ProjectArchived)
-                            {
-                                <span class="badge archived">已归档</span>
-                            }
-                        </td>
-                        <td>
-                            @if (notice.Notification.IsMock)
-                            {
-                                <span class="badge status-canceled">mock</span>
-                            }
-                            else
-                            {
-                                <span class="badge status-running">真实发送</span>
-                            }
-                        </td>
-                        <td>
-                            @if (notice.Notification.Succeeded)
-                            {
-                                <span class="badge status-succeeded">成功</span>
-                            }
-                            else
-                            {
-                                <span class="badge status-failed">失败</span>
-                            }
-                        </td>
-                        <td>@(notice.Notification.ErrorMessage ?? "-")</td>
-                        <td class="cell-json">
-                            @if (string.IsNullOrWhiteSpace(notice.Notification.PayloadJson))
-                            {
-                                <span class="muted">-</span>
-                            }
-                            else
-                            {
-                                <details>
-                                    <summary>@Shorten(notice.Notification.PayloadJson, 80)</summary>
-                                    <pre>@notice.Notification.PayloadJson</pre>
-                                </details>
-                            }
-                        </td>
-                    </tr>
-                }
-            </tbody>
-        </table>
-    </div>
-}
-
-<h2 class="section-title">最近日报</h2>
-@if (reports.Count == 0)
-{
-    <div class="empty">还没有日报。点击上方按钮会用当前数据生成一份；每日 10:00 的自动生成与 Lark 发送由日报任务接入。</div>
-}
-else
-{
-    @foreach (var report in reports)
-    {
-        var summary = report.Summary;
-        <section class="panel">
-            <h2>@ReportDateText(summary)</h2>
-            <p class="muted">
-                生成于 @summary.CreatedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss")
-                ｜token @(summary.PromptTokens + summary.CompletionTokens)（@summary.PromptTokens / @summary.CompletionTokens）
-                ｜耗时 @FormatDuration(summary.DurationMs)
-                @if (!string.IsNullOrWhiteSpace(summary.Model))
-                {
-                    <text>｜模型 @summary.Model</text>
-                }
-            </p>
-            <div class="inline-badges">
-                @if (summary.FallbackUsed)
-                {
-                    <span class="badge status-canceled">模板兜底（LLM 故障，不编造结论）</span>
-                }
-                else
-                {
-                    <span class="badge status-succeeded">非模板兜底</span>
-                }
-            </div>
-
-            <h3 class="subsection-title">当日执行与观察项统计</h3>
-            <div class="stat-grid compact">
-                <div class="stat-card"><span>执行轮次</span><strong>@report.Stats.RunCount</strong></div>
-                <div class="stat-card"><span>成功</span><strong>@report.Stats.Succeeded</strong></div>
-                <div class="stat-card"><span>失败</span><strong>@report.Stats.Failed</strong></div>
-                <div class="stat-card"><span>Skipped</span><strong>@report.Stats.Skipped</strong></div>
-                <div class="stat-card"><span>Canceled</span><strong>@report.Stats.Canceled</strong></div>
-                <div class="stat-card"><span>观察项</span><strong>@report.Stats.ObservationCount</strong></div>
-            </div>
-
-            <h3 class="subsection-title">Lark 发送状态（LarkNotification · DailyReport）</h3>
-            @if (report.Notifications.Count == 0)
+<header class="page-head">
+    <div class="page-head__main">
+        <p class="kicker">报告 · Reports</p>
+        <h1 class="page-title">巡检日报</h1>
+        <p class="page-meta">
+            <span>全局口径 · 不按环境拆分</span>
+            @if (reports.Count > 0)
             {
-                <p class="muted">该日报日期没有匹配到 Lark 发送留痕（最近的发送状态见页面顶部）。</p>
+                <span>最近生成 @(reports[0].Summary.CreatedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm"))</span>
             }
             else
             {
-                var latest = report.Notifications[0];
-                <div class="inline-badges">
-                    <span class="muted">共 @report.Notifications.Count 条</span>
-                    @if (latest.Notification.IsMock)
-                    {
-                        <span class="badge status-canceled">mock</span>
-                    }
-                    else
-                    {
-                        <span class="badge status-running">真实发送</span>
-                    }
-                    @if (latest.Notification.Succeeded)
-                    {
-                        <span class="badge status-succeeded">成功</span>
-                    }
-                    else
-                    {
-                        <span class="badge status-failed">失败</span>
-                    }
-                    <span class="muted">@latest.Notification.CreatedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss")</span>
-                    @if (!string.IsNullOrWhiteSpace(latest.Notification.ErrorMessage))
-                    {
-                        <span class="muted">· @latest.Notification.ErrorMessage</span>
-                    }
-                </div>
+                <span>尚未生成日报</span>
             }
+            <span>最近 @reports.Count 份日报</span>
+        </p>
+    </div>
+    <div class="page-head__actions">
+        <button class="btn btn--primary" @onclick="GenerateAsync" disabled="@isGenerating">
+            @(isGenerating ? "生成中…" : "生成今日日报")
+        </button>
+    </div>
+</header>
 
-            <h3 class="subsection-title">日报内容</h3>
-            <pre class="report">@summary.Content</pre>
-        </section>
-    }
+<p class="page-lede">
+    每天 10:00 生成一份 AiSummary(DailyReport)，发送留痕写入 LarkNotification（v1 走 mock 通道）。
+    日报为全局口径，不按项目 / 环境拆分；每份日报下方给出当日执行状态与观察项统计，便于把摘要内容与真实数据对照。
+</p>
+
+@if (statusMessage is not null)
+{
+    <p class="alert-line" role="alert"><strong>日报生成</strong><span>@statusMessage</span></p>
 }
+
+@if (loadError is not null)
+{
+    <p class="alert-line" role="alert"><strong>加载失败</strong><span>@loadError</span></p>
+}
+
+<section class="section" aria-labelledby="s-reports">
+    <div class="section__head">
+        <span class="section__index">§ 01</span>
+        <h2 class="section__title" id="s-reports">最近日报</h2>
+        <span class="section__meta">@reports.Count 份 · 全局口径</span>
+    </div>
+    <div class="section__body">
+        @if (reports.Count == 0)
+        {
+            <div class="empty">
+                <span class="empty__glyph" aria-hidden="true">◇</span>
+                <h3 class="empty__title">还没有日报</h3>
+                <p class="empty__copy">
+                    点击页头的「生成今日日报」会用当前数据生成一份；每日 10:00 的自动生成与 Lark 发送由日报任务接入。
+                </p>
+            </div>
+        }
+        else
+        {
+            @foreach (var report in reports)
+            {
+                <article class="report">
+                    <div class="report__head">
+                        <h3 class="report__title">@ReportDateText(report.Summary)</h3>
+                        <p class="report__meta">
+                            生成于 @report.Summary.CreatedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss")
+                            ｜ token @(report.Summary.PromptTokens + report.Summary.CompletionTokens)（@report.Summary.PromptTokens / @report.Summary.CompletionTokens）
+                            ｜ 耗时 @DisplayText.FormatDuration(report.Summary.DurationMs)
+                            ｜ 模型 @DisplayText.OrDash(report.Summary.Model)
+                        </p>
+                    </div>
+
+                    <div class="status-line" style="margin-top: 12px;">
+                        @if (report.Summary.FallbackUsed)
+                        {
+                            <span class="chip">模板兜底</span>
+                            <span class="note">LLM 故障时用模板兜底，不编造结论。</span>
+                        }
+                        else
+                        {
+                            <span class="chip chip--ok">AI 生成</span>
+                        }
+                    </div>
+
+                    <div class="kpi-grid kpi-grid--compact">
+                        <div class="kpi">
+                            <span class="kpi__value">@report.Stats.RunCount</span>
+                            <span class="kpi__label">执行轮次</span>
+                        </div>
+                        <div class="kpi">
+                            <span class="kpi__value">@report.Stats.Succeeded</span>
+                            <span class="kpi__label">完成</span>
+                        </div>
+                        <div class="@(report.Stats.Failed > 0 ? "kpi kpi--bad" : "kpi")">
+                            <span class="kpi__value">@report.Stats.Failed</span>
+                            <span class="kpi__label">失败</span>
+                        </div>
+                        <div class="kpi">
+                            <span class="kpi__value">@report.Stats.Skipped</span>
+                            <span class="kpi__label">跳过</span>
+                        </div>
+                        <div class="kpi">
+                            <span class="kpi__value">@report.Stats.Canceled</span>
+                            <span class="kpi__label">取消</span>
+                        </div>
+                        <div class="kpi">
+                            <span class="kpi__value">@report.Stats.ObservationCount</span>
+                            <span class="kpi__label">观察项</span>
+                        </div>
+                    </div>
+
+                    <div class="status-line" style="margin-top: 14px;">
+                        <span class="note">Lark 发送</span>
+                        @if (report.Notifications.Count == 0)
+                        {
+                            <span class="note">该日期没有匹配到 DailyReport 发送留痕。</span>
+                        }
+                        else
+                        {
+                            var latest = report.Notifications[0];
+                            <span class="note">共 @report.Notifications.Count 条</span>
+                            @if (latest.Notification.IsMock)
+                            {
+                                <span class="chip">mock</span>
+                            }
+                            else
+                            {
+                                <span class="chip">真实</span>
+                            }
+                            @if (latest.Notification.Succeeded)
+                            {
+                                <span class="chip chip--ok">已发送</span>
+                            }
+                            else
+                            {
+                                <span class="chip">发送失败</span>
+                            }
+                            <span class="note mono">@latest.Notification.CreatedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss")</span>
+                            @if (!string.IsNullOrWhiteSpace(latest.Notification.ErrorMessage))
+                            {
+                                <span class="note">失败原因：@latest.Notification.ErrorMessage</span>
+                            }
+                        }
+                    </div>
+
+                    <details class="evidence">
+                        <summary>查看日报全文（@report.Summary.Content.Length 字）</summary>
+                        <div class="evidence__body">
+                            <pre class="code">@report.Summary.Content</pre>
+                        </div>
+                    </details>
+                </article>
+            }
+        }
+    </div>
+</section>
+
+<section class="section" aria-labelledby="s-lark">
+    <div class="section__head">
+        <span class="section__index">§ 02</span>
+        <h2 class="section__title" id="s-lark">最近发送留痕</h2>
+        <span class="section__meta">@recentNotifications.Count 条 · DailyReport</span>
+    </div>
+    <div class="section__body">
+        @if (recentNotifications.Count == 0)
+        {
+            <div class="empty">
+                <span class="empty__glyph" aria-hidden="true">◇</span>
+                <h3 class="empty__title">还没有发送留痕</h3>
+                <p class="empty__copy">
+                    还没有 DailyReport 类型的 LarkNotification；日报发送链路由日报任务接入后写入。
+                </p>
+            </div>
+        }
+        else
+        {
+            <div class="table-wrap" role="region" aria-label="日报发送留痕" tabindex="0">
+                <table class="table table--wide">
+                    <caption class="sr-only">最近 DailyReport 发送留痕：时间、项目、通道、结果、失败原因与报文预览</caption>
+                    <thead>
+                        <tr>
+                            <th scope="col" class="num">发送时间</th>
+                            <th scope="col">项目</th>
+                            <th scope="col">通道</th>
+                            <th scope="col">结果</th>
+                            <th scope="col">失败原因</th>
+                            <th scope="col">报文预览</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var notice in recentNotifications)
+                        {
+                            <tr>
+                                <td class="num">@notice.Notification.CreatedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss")</td>
+                                <td>
+                                    @DisplayText.NameOrMissing(notice.ProjectName)
+                                    @if (notice.ProjectArchived)
+                                    {
+                                        <span class="chip">已归档</span>
+                                    }
+                                </td>
+                                <td>
+                                    @if (notice.Notification.IsMock)
+                                    {
+                                        <span class="chip">mock</span>
+                                    }
+                                    else
+                                    {
+                                        <span class="chip">真实</span>
+                                    }
+                                </td>
+                                <td>
+                                    @if (notice.Notification.Succeeded)
+                                    {
+                                        <span class="chip chip--ok">已发送</span>
+                                    }
+                                    else
+                                    {
+                                        <span class="chip">发送失败</span>
+                                    }
+                                </td>
+                                <td>@DisplayText.OrDash(notice.Notification.ErrorMessage)</td>
+                                <td>
+                                    @if (string.IsNullOrWhiteSpace(notice.Notification.PayloadJson))
+                                    {
+                                        <span class="muted">-</span>
+                                    }
+                                    else
+                                    {
+                                        <details class="evidence">
+                                            <summary>查看报文（@notice.Notification.PayloadJson.Length 字）</summary>
+                                            <div class="evidence__body">
+                                                <pre class="code">@notice.Notification.PayloadJson</pre>
+                                            </div>
+                                        </details>
+                                    }
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        }
+    </div>
+</section>
 
 @code {
     private sealed record DayStats(
@@ -193,6 +269,7 @@ else
     private List<NoticeView> recentNotifications = [];
     private string? loadError;
     private string? statusMessage;
+    private bool isGenerating;
 
     protected override async Task OnInitializedAsync()
     {
@@ -303,17 +380,29 @@ else
 
     private async Task GenerateAsync()
     {
-        statusMessage = null;
+        if (isGenerating)
+        {
+            return;
+        }
+
+        isGenerating = true;
+        statusMessage = "正在生成今日日报…";
+        StateHasChanged();
+
         try
         {
             var today = DateOnly.FromDateTime(DateTime.Today);
             await ReportService.GenerateAsync(today);
-            statusMessage = $"已生成 {DateTimeOffset.Now:HH:mm:ss} 的日报。";
+            statusMessage = $"已生成 {DateTimeOffset.Now:HH:mm:ss} 的今日日报。";
             await ReloadAsync();
         }
         catch (Exception ex)
         {
             statusMessage = $"生成失败：{ex.Message}";
+        }
+        finally
+        {
+            isGenerating = false;
         }
     }
 
@@ -347,22 +436,7 @@ else
     }
 
     private static string ReportDateText(AiSummary summary)
-        => summary.ReportDate is { } date ? $"{date:yyyy-MM-dd} 日报" : "日报";
-
-    private static string FormatDuration(long milliseconds) => milliseconds switch
-    {
-        <= 0 => "-",
-        < 1000 => $"{milliseconds} ms",
-        _ => $"{milliseconds / 1000d:0.0} s",
-    };
-
-    private static string Shorten(string? value, int maxLength)
-    {
-        if (string.IsNullOrEmpty(value))
-        {
-            return "-";
-        }
-
-        return value.Length <= maxLength ? value : value[..maxLength] + "…";
-    }
+        => summary.ReportDate is { } date
+            ? $"{date:yyyy-MM-dd} 日报"
+            : $"{summary.CreatedAt.ToLocalTime():yyyy-MM-dd} 日报";
 }

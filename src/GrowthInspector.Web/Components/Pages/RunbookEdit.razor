@@ -1,62 +1,106 @@
 @page "/runbooks/{Id:guid}"
+@layout DesignLayout
 @rendermode InteractiveServer
 @inject IManagementService Management
+@inject WorkspaceContextService Workspace
 @inject NavigationManager Nav
 
-<PageTitle>编辑手册 · Growth Inspector</PageTitle>
+<PageTitle>@PageHeading · Growth Inspector</PageTitle>
+
+<nav class="breadcrumb" aria-label="面包屑">
+    <a href="@RunbooksHref">运维手册</a>
+    <span class="breadcrumb__sep" aria-hidden="true">/</span>
+    <span>编辑</span>
+</nav>
+
+<header class="page-head">
+    <div class="page-head__main">
+        <p class="kicker">体系 · 运维手册</p>
+        <h1 class="page-title">@PageHeading</h1>
+        @if (runbook is not null)
+        {
+            <p class="page-meta">
+                <span>@runbook.ProjectName</span>
+                <span>被 @runbook.ReferencedByChecklistCount 张检查单引用</span>
+                <span>
+                    @if (isArchived)
+                    {
+                        <span class="chip">已归档</span>
+                    }
+                    else
+                    {
+                        <span class="chip chip--ok">启用</span>
+                    }
+                </span>
+            </p>
+        }
+    </div>
+    <div class="page-head__actions">
+        <a class="btn btn--quiet" href="@RunbooksHref">返回列表</a>
+        @if (runbook is not null)
+        {
+            <button type="button" class="btn btn--quiet" @onclick="ToggleArchivedAsync">
+                @(isArchived ? "取消归档" : "归档")
+            </button>
+        }
+    </div>
+</header>
+
+<p class="page-lede">
+    手册只承载知识，不承载可执行判定；被检查单引用后全文交给 agent，判定由检查单的结构化断言完成。
+    v1 的删除语义只有归档，没有硬删除。
+</p>
 
 @if (!loaded)
 {
-    <p class="muted">加载中…</p>
+    <p class="note">加载中…</p>
 }
 else if (runbook is null)
 {
-    <h1>编辑手册</h1>
-    <p class="error-text">@statusMessage</p>
-    <a href="/runbooks">返回手册列表</a>
+    <div class="empty">
+        <span class="empty__glyph" aria-hidden="true">◇</span>
+        <h2 class="empty__title">手册不存在</h2>
+        <p class="empty__copy">@statusMessage</p>
+        <p class="empty__copy"><a href="@RunbooksHref">返回手册列表</a></p>
+    </div>
 }
 else
 {
-    <h1>编辑手册</h1>
-    <p class="page-subtitle">
-        项目：@runbook.ProjectName
-        <span class="muted">｜手册只承载知识，不承载可执行判定；被 @runbook.ReferencedByChecklistCount 张检查单引用。</span>
-        <span class="badge">@(isArchived ? "已归档" : "启用")</span>
-    </p>
-
-    <div class="form-col">
+    <div class="panel">
         <div class="form-row">
-            <label style="flex:2;">
-                标题
-                <input @bind="title" />
+            <label class="field">
+                <span class="field__label">标题</span>
+                <input class="input" @bind="title" />
             </label>
-            <label>
-                类别
-                <select @bind="kindText">
+            <label class="field">
+                <span class="field__label">类别</span>
+                <select class="select" @bind="kindText">
                     <option value="Specialized">专用（被引用后注入）</option>
                     <option value="General">通用（自动注入）</option>
                 </select>
             </label>
         </div>
-        <label>
-            正文（Markdown）
-            <textarea class="markdown-editor" rows="24" @bind="body"></textarea>
-        </label>
+        <div class="form-col">
+            <label class="field">
+                <span class="field__label">正文（Markdown）</span>
+                <textarea class="textarea textarea--code" rows="24" @bind="body"></textarea>
+            </label>
+        </div>
     </div>
 
-    <div class="form-row">
-        <button class="primary" @onclick="SaveAsync">保存</button>
-        <button @onclick="ToggleArchivedAsync">@(isArchived ? "取消归档" : "归档")</button>
-        <a href="/runbooks">返回列表</a>
-        <span class="muted">@statusMessage</span>
+    <div class="actions">
+        <button type="button" class="btn btn--primary" @onclick="SaveAsync">保存</button>
+        <button type="button" class="btn" @onclick="ToggleArchivedAsync">@(isArchived ? "取消归档" : "归档")</button>
+        <a class="btn btn--quiet" href="@RunbooksHref">返回列表</a>
+        <span class="note">@statusMessage</span>
     </div>
-    <p class="muted">v1 的删除语义只有归档，没有硬删除。</p>
 }
 
 @code {
     [Parameter]
     public Guid Id { get; set; }
 
+    private WorkspaceContext workspace = WorkspaceContext.Empty;
     private bool loaded;
     private RunbookView? runbook;
     private string title = "";
@@ -65,9 +109,14 @@ else
     private bool isArchived;
     private string? statusMessage;
 
+    private string ContextQuery => workspace.QuerySuffix;
+    private string RunbooksHref => $"/runbooks{ContextQuery}";
+    private string PageHeading => string.IsNullOrWhiteSpace(runbook?.Title) ? "编辑手册" : runbook!.Title;
+
     protected override async Task OnParametersSetAsync()
     {
         loaded = false;
+        await ResolveWorkspaceAsync();
         try
         {
             runbook = await Management.GetRunbookAsync(Id);
@@ -87,8 +136,24 @@ else
         {
             statusMessage = ex.Message;
         }
+        catch (Exception ex)
+        {
+            statusMessage = $"加载失败：{ex.Message}";
+        }
 
         loaded = true;
+    }
+
+    private async Task ResolveWorkspaceAsync()
+    {
+        try
+        {
+            workspace = await Workspace.ResolveAsync(WorkspaceContextService.ReadQueryValue(Nav));
+        }
+        catch
+        {
+            workspace = WorkspaceContext.Empty;
+        }
     }
 
     private async Task SaveAsync()

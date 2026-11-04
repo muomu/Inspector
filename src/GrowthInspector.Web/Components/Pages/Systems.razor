@@ -1,0 +1,351 @@
+@page "/systems"
+@layout DesignLayout
+@inject IManagementService Management
+@inject WorkspaceContextService Workspace
+@inject NavigationManager Nav
+
+<PageTitle>体系 · Growth Inspector</PageTitle>
+
+<header class="page-head">
+    <div class="page-head__main">
+        <p class="kicker">体系 · Systems</p>
+        <h1 class="page-title">体系</h1>
+        <p class="page-meta">
+            <span>知识资产</span>
+            <span>执行配置</span>
+            <span>数据源接入</span>
+            @if (workspace.Current is not null)
+            {
+                <span>@workspace.Current.ProjectName · @workspace.Current.EnvironmentName</span>
+            }
+        </p>
+    </div>
+    <div class="page-head__actions">
+        <a class="btn btn--quiet" href="@ChecklistsHref">检查单</a>
+        <a class="btn btn--quiet" href="@RunbooksHref">运维手册</a>
+    </div>
+</header>
+
+<p class="page-lede">
+    体系是配置面：手册提供长期记忆，检查单定义可执行单元，项目 / 环境决定作用域，MCP server 是唯一数据源接入方式。
+    结果页面（总览 / 异常 / 执行 / 报告）只读这里产出的数据，不在这里改配置。
+</p>
+
+@if (loadError is not null)
+{
+    <p class="alert-line" role="alert"><strong>加载失败</strong><span>@loadError</span></p>
+}
+
+<section class="section" aria-labelledby="s-assets">
+    <div class="section__head">
+        <span class="section__index">§ 01</span>
+        <h2 class="section__title" id="s-assets">知识资产</h2>
+        <span class="section__meta">@ScopeLabel</span>
+    </div>
+    <div class="section__body">
+        <div class="entry-grid">
+            <a class="entry" href="@RunbooksHref">
+                <span class="entry__index">01</span>
+                <span class="entry__title">运维手册</span>
+                <span class="entry__meta">
+                    @runbooks.Count 份 · 通用 @GeneralRunbookCount 份 / 专用 @SpecializedRunbookCount 份；
+                    通用手册自动注入本项目所有检查单。
+                </span>
+                <span class="entry__arrow" aria-hidden="true">→</span>
+            </a>
+            <a class="entry" href="@ChecklistsHref">
+                <span class="entry__index">02</span>
+                <span class="entry__title">检查单</span>
+                <span class="entry__meta">
+                    @checklists.Count 张 · 启用 @EnabledChecklistCount 张 · @ChecklistItemCount 个检查项；
+                    一张单一个频率，执行时按环境写快照。
+                </span>
+                <span class="entry__arrow" aria-hidden="true">→</span>
+            </a>
+            <a class="entry" href="@SettingsHref">
+                <span class="entry__index">03</span>
+                <span class="entry__title">项目 / 环境</span>
+                <span class="entry__meta">
+                    @projects.Count 个项目 · @environments.Count 个环境；环境是执行与异常的最小作用域。
+                </span>
+                <span class="entry__arrow" aria-hidden="true">→</span>
+            </a>
+            <a class="entry" href="@SettingsHref">
+                <span class="entry__index">04</span>
+                <span class="entry__title">MCP server</span>
+                <span class="entry__meta">
+                    @mcpServers.Count 个登记 · 启用 @EnabledMcpCount 个；v1 只要求 mock server 可跑通。
+                </span>
+                <span class="entry__arrow" aria-hidden="true">→</span>
+            </a>
+        </div>
+    </div>
+</section>
+
+<section class="section" aria-labelledby="s-checklists">
+    <div class="section__head">
+        <span class="section__index">§ 02</span>
+        <h2 class="section__title" id="s-checklists">检查单与频率</h2>
+        <span class="section__meta">@checklists.Count 张 · @ScopeLabel</span>
+    </div>
+    <div class="section__body">
+        @if (checklists.Count == 0)
+        {
+            <div class="empty">
+                <span class="empty__glyph" aria-hidden="true">◇</span>
+                <h3 class="empty__title">还没有检查单</h3>
+                <p class="empty__copy">先到 <a href="@ChecklistsHref">检查单</a> 新建一张，再触发第一轮执行。</p>
+            </div>
+        }
+        else
+        {
+            <div class="table-wrap" role="region" aria-label="检查单与频率" tabindex="0">
+                <table class="table">
+                    <caption class="sr-only">检查单、频率、检查项与最近运行</caption>
+                    <thead>
+                        <tr>
+                            <th scope="col">检查单</th>
+                            <th scope="col">项目</th>
+                            <th scope="col">频率</th>
+                            <th scope="col" class="num">检查项</th>
+                            <th scope="col" class="num">引用手册</th>
+                            <th scope="col">最近运行</th>
+                            <th scope="col">状态</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var checklist in checklists)
+                        {
+                            <tr>
+                                <td><a class="table__title" href="@ChecklistsHref/@checklist.Id">@checklist.Name</a></td>
+                                <td>@checklist.ProjectName</td>
+                                <td>@DisplayText.FrequencyText(checklist.Frequency)</td>
+                                <td class="num">@checklist.ItemCount</td>
+                                <td class="num">@checklist.RunbookRefCount</td>
+                                <td class="num">@(checklist.LastRunAt is { } lastRun ? lastRun.ToLocalTime().ToString("MM-dd HH:mm") : "-")</td>
+                                <td>
+                                    <span class="status-line">
+                                        @if (checklist.IsArchived)
+                                        {
+                                            <span class="chip">已归档</span>
+                                        }
+                                        else if (checklist.IsEnabled)
+                                        {
+                                            <span class="chip chip--ok">启用</span>
+                                        }
+                                        else
+                                        {
+                                            <span class="chip">停用</span>
+                                        }
+                                    </span>
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        }
+    </div>
+</section>
+
+<section class="section" aria-labelledby="s-mcp">
+    <div class="section__head">
+        <span class="section__index">§ 03</span>
+        <h2 class="section__title" id="s-mcp">MCP server</h2>
+        <span class="section__meta">@mcpServers.Count 个登记</span>
+    </div>
+    <div class="section__body">
+        @if (mcpServers.Count == 0)
+        {
+            <div class="empty">
+                <span class="empty__glyph" aria-hidden="true">◇</span>
+                <h3 class="empty__title">还没有登记 MCP server</h3>
+                <p class="empty__copy">到 <a href="@SettingsHref">设置</a> 登记一个 server；新增数据源 = 登记一个 server。</p>
+            </div>
+        }
+        else
+        {
+            <div class="table-wrap" role="region" aria-label="MCP server 登记" tabindex="0">
+                <table class="table">
+                    <caption class="sr-only">MCP server 的传输方式、绑定环境与启用状态</caption>
+                    <thead>
+                        <tr>
+                            <th scope="col">名称</th>
+                            <th scope="col">项目</th>
+                            <th scope="col">传输</th>
+                            <th scope="col">绑定环境</th>
+                            <th scope="col" class="num">超时 / 截断</th>
+                            <th scope="col">状态</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var server in mcpServers)
+                        {
+                            <tr>
+                                <td class="table__title">@server.Name</td>
+                                <td>@ProjectName(server.ProjectId)</td>
+                                <td>@(server.Transport == McpTransport.Http ? "HTTP" : "stdio")</td>
+                                <td>@(server.EnvironmentName ?? "全部环境")</td>
+                                <td class="num">@server.TimeoutSeconds s / @server.MaxResultBytes B</td>
+                                <td>
+                                    <span class="status-line">
+                                        @if (server.IsArchived)
+                                        {
+                                            <span class="chip">已归档</span>
+                                        }
+                                        else if (server.IsEnabled)
+                                        {
+                                            <span class="chip chip--ok">启用</span>
+                                        }
+                                        else
+                                        {
+                                            <span class="chip">停用</span>
+                                        }
+                                    </span>
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        }
+    </div>
+</section>
+
+<section class="section" aria-labelledby="s-projects">
+    <div class="section__head">
+        <span class="section__index">§ 04</span>
+        <h2 class="section__title" id="s-projects">项目与环境</h2>
+        <span class="section__meta">@projects.Count 个项目 · @environments.Count 个环境</span>
+    </div>
+    <div class="section__body">
+        @if (projects.Count == 0)
+        {
+            <div class="empty">
+                <span class="empty__glyph" aria-hidden="true">◇</span>
+                <h3 class="empty__title">还没有项目</h3>
+                <p class="empty__copy">到 <a href="@SettingsHref">设置</a> 创建第一个项目与环境，再导入知识资产。</p>
+            </div>
+        }
+        else
+        {
+            <div class="table-wrap" role="region" aria-label="项目与环境" tabindex="0">
+                <table class="table">
+                    <caption class="sr-only">项目、环境、默认环境与归档状态</caption>
+                    <thead>
+                        <tr>
+                            <th scope="col">项目</th>
+                            <th scope="col">标识</th>
+                            <th scope="col">环境</th>
+                            <th scope="col">默认</th>
+                            <th scope="col">状态</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var project in projects)
+                        {
+                            var projectEnvironments = environments.Where(x => x.ProjectId == project.Id).ToList();
+                            <tr>
+                                <td class="table__title">
+                                    @project.Name
+                                    @if (project.IsArchived)
+                                    {
+                                        <span class="chip">已归档</span>
+                                    }
+                                </td>
+                                <td class="mono">@(project.Code ?? "-")</td>
+                                <td>
+                                    @if (projectEnvironments.Count == 0)
+                                    {
+                                        <span class="muted">未配置环境</span>
+                                    }
+                                    else
+                                    {
+                                        @foreach (var environment in projectEnvironments)
+                                        {
+                                            <span class="chip chip--plain">@environment.Name@(environment.IsArchived ? " · 已归档" : "")</span>
+                                        }
+                                    }
+                                </td>
+                                <td>@(projectEnvironments.Any(x => x.IsDefault && !x.IsArchived) ? "是" : "否")</td>
+                                <td>
+                                    @if (project.IsArchived)
+                                    {
+                                        <span class="chip">已归档</span>
+                                    }
+                                    else
+                                    {
+                                        <span class="chip chip--ok">启用</span>
+                                    }
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        }
+        <div class="actions">
+            <a class="btn" href="@SettingsHref">管理项目 / 环境 / MCP</a>
+        </div>
+    </div>
+</section>
+
+@code {
+    private WorkspaceContext workspace = WorkspaceContext.Empty;
+    private List<ProjectView> projects = [];
+    private List<EnvironmentView> environments = [];
+    private List<RunbookSummaryView> runbooks = [];
+    private List<ChecklistView> checklists = [];
+    private List<McpServerView> mcpServers = [];
+    private string? loadError;
+
+    private string ContextQuery => workspace.QuerySuffix;
+    private string ChecklistsHref => $"/checklists{ContextQuery}";
+    private string RunbooksHref => $"/runbooks{ContextQuery}";
+    private string SettingsHref => $"/settings{ContextQuery}";
+
+    private string ScopeLabel => workspace.Current is null
+        ? "全部项目"
+        : $"{workspace.Current.ProjectName} · 当前项目";
+
+    private int GeneralRunbookCount => runbooks.Count(x => x.Kind == RunbookKind.General);
+    private int SpecializedRunbookCount => runbooks.Count(x => x.Kind == RunbookKind.Specialized);
+    private int EnabledChecklistCount => checklists.Count(x => x.IsEnabled && !x.IsArchived);
+    private int ChecklistItemCount => checklists.Sum(x => x.ItemCount);
+    private int EnabledMcpCount => mcpServers.Count(x => x.IsEnabled && !x.IsArchived);
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            workspace = await Workspace.ResolveAsync(WorkspaceContextService.ReadQueryValue(Nav));
+
+            projects = (await Management.ListProjectsAsync(includeArchived: true, limit: 200)).Items.ToList();
+            environments = (await Management.ListEnvironmentsAsync(includeArchived: true, limit: 200)).Items.ToList();
+            runbooks = (await Management.ListRunbooksAsync(includeArchived: false, limit: 200)).Items.ToList();
+            checklists = (await Management.ListChecklistsAsync(includeArchived: false, limit: 200)).Items.ToList();
+            mcpServers = (await Management.ListMcpServersAsync(includeArchived: false, limit: 200)).Items.ToList();
+
+            // 顶栏上下文是当前项目；体系只显示当前项目下的配置，避免跨项目串台。
+            if (workspace.Current is { } current)
+            {
+                runbooks = runbooks.Where(x => x.ProjectId == current.ProjectId).ToList();
+                checklists = checklists.Where(x => x.ProjectId == current.ProjectId).ToList();
+                mcpServers = mcpServers.Where(x => x.ProjectId == current.ProjectId).ToList();
+                environments = environments.Where(x => x.ProjectId == current.ProjectId).ToList();
+                projects = projects.Where(x => x.Id == current.ProjectId).ToList();
+            }
+        }
+        catch (ManagementException ex)
+        {
+            loadError = ex.Message;
+        }
+        catch (Exception ex)
+        {
+            loadError = ex.Message;
+        }
+    }
+
+    private string ProjectName(Guid projectId)
+        => projects.FirstOrDefault(x => x.Id == projectId)?.Name ?? "(已归档/已删除)";
+}

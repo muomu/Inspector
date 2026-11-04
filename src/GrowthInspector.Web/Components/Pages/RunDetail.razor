@@ -1,502 +1,672 @@
 @page "/runs/{Id:guid}"
+@layout DesignLayout
 @inject IDbContextFactory<GrowthInspectorDbContext> DbFactory
+@inject WorkspaceContextService Workspace
+@inject NavigationManager Nav
 @using System.Text.Json
 
 <PageTitle>执行详情 · Growth Inspector</PageTitle>
 
-@if (run is null)
+<nav class="breadcrumb" aria-label="面包屑">
+    <a href="@RunsHref">执行历史</a>
+    <span class="breadcrumb__sep" aria-hidden="true">/</span>
+    <span>详情</span>
+</nav>
+
+<header class="page-head">
+    <div class="page-head__main">
+        <p class="kicker">执行详情 · Run</p>
+        <h1 class="page-title">执行详情</h1>
+        @if (run is not null)
+        {
+            <p class="page-meta">
+                <span>
+                    检查单 @DisplayText.NameOrMissing(run.Checklist?.Name)
+                    @if (run.Checklist?.IsArchived == true)
+                    {
+                        <span class="chip">已归档</span>
+                    }
+                </span>
+                <span>
+                    环境 @DisplayText.NameOrMissing(run.Environment?.Name)
+                    @if (run.Environment?.IsArchived == true)
+                    {
+                        <span class="chip">已归档</span>
+                    }
+                </span>
+                <span>触发 @DisplayText.TriggerText(run.Trigger)</span>
+                <span><StatusBadge Value="@StatusPresenter.FromRun(run.Status)" /></span>
+                <span class="mono" title="@run.Id">run @ShortRunId</span>
+            </p>
+        }
+    </div>
+    <div class="page-head__actions">
+        <a class="btn btn--quiet" href="@RunsHref">返回执行历史</a>
+    </div>
+</header>
+
+@if (loadError is not null)
 {
-    <p class="back-link"><a href="/runs">← 执行历史</a></p>
-    <h1>执行详情</h1>
-    <div class="empty">执行记录不存在或已被清理。<a href="/runs">返回执行历史</a></div>
+    <p class="alert-line" role="alert"><strong>加载失败</strong><span>@loadError</span></p>
+}
+else if (run is null)
+{
+    <div class="empty" style="margin-top: 40px;">
+        <span class="empty__glyph" aria-hidden="true">◇</span>
+        <h2 class="empty__title">执行记录不存在</h2>
+        <p class="empty__copy">该执行记录可能已被清理或链接有误。<a href="@RunsHref">返回执行历史</a></p>
+    </div>
 }
 else
 {
-    <p class="back-link"><a href="/runs">← 执行历史</a></p>
-    <h1>执行详情</h1>
-    <p class="page-subtitle">
-        检查单：@NameOrMissing(run.Checklist?.Name)
-        @if (run.Checklist?.IsArchived == true)
-        {
-            <span class="badge archived">已归档</span>
-        }
-        ｜环境：@NameOrMissing(run.Environment?.Name)
-        @if (run.Environment?.IsArchived == true)
-        {
-            <span class="badge archived">已归档</span>
-        }
-        ｜状态：<span class="@RunStatusClass(run.Status)">@RunStatusText(run.Status)</span>
-        ｜触发：@TriggerText(run.Trigger)
-    </p>
-    <p class="muted mono">run id: @run.Id</p>
-
-    <div class="stat-grid">
-        <div class="stat-card">
-            <span>开始时间</span>
-            <strong class="stat-value">@run.StartedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss")</strong>
+    <section class="run-hero" aria-labelledby="run-conclusion">
+        <h2 class="run-title" id="run-conclusion">
+            @if (verdict.Total == 0)
+            {
+                <text>@ConclusionLead，没有检查项结果。</text>
+            }
+            else if (verdict.Danger > 0)
+            {
+                <text>@ConclusionLead，</text><em class="is-danger">@verdict.Danger 个检查项异常</em><text>。</text>
+            }
+            else if (verdict.Warning > 0)
+            {
+                <text>@ConclusionLead，</text><em>@verdict.Warning 个检查项需要处理</em><text>。</text>
+            }
+            else if (verdict.Pending > 0)
+            {
+                <text>@ConclusionLead，@verdict.Pending 个检查项待证，未形成异常。</text>
+            }
+            else if (verdict.Neutral > 0)
+            {
+                <text>@ConclusionLead，@verdict.Neutral 个检查项为信息级结果，未形成异常。</text>
+            }
+            else
+            {
+                <text>@ConclusionLead，未形成异常。</text>
+            }
+        </h2>
+        <p class="run-copy">@RunCopy</p>
+        <div class="run-stats">
+            <span class="run-stat"><strong>@verdict.Ok</strong>Ok</span>
+            <span class="run-stat run-stat--warn"><strong>@verdict.Warning</strong>注意</span>
+            <span class="run-stat run-stat--bad"><strong>@verdict.Danger</strong>异常</span>
+            <span class="run-stat run-stat--pending"><strong>@verdict.Pending</strong>待证</span>
+            <span class="run-stat"><strong>@verdict.Neutral</strong>中性</span>
+            <span class="run-stat__note">共 @verdict.Total 个检查项 · 状态「@StatusPresenter.FromRun(run.Status).Label」</span>
         </div>
-        <div class="stat-card">
-            <span>完成时间</span>
-            <strong class="stat-value">@(run.CompletedAt is { } completed ? completed.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss") : "-")</strong>
+        <div class="run-meter" role="img" aria-label="@verdict.MeterLabel">
+            @if (verdict.Ok > 0)
+            {
+                <span class="run-meter__seg run-meter__seg--ok" style="@verdict.WidthOf(verdict.Ok)"></span>
+            }
+            @if (verdict.Warning > 0)
+            {
+                <span class="run-meter__seg run-meter__seg--warn" style="@verdict.WidthOf(verdict.Warning)"></span>
+            }
+            @if (verdict.Danger > 0)
+            {
+                <span class="run-meter__seg run-meter__seg--bad" style="@verdict.WidthOf(verdict.Danger)"></span>
+            }
+            @if (verdict.Pending > 0)
+            {
+                <span class="run-meter__seg run-meter__seg--pending" style="@verdict.WidthOf(verdict.Pending)"></span>
+            }
+            @if (verdict.Neutral > 0)
+            {
+                <span class="run-meter__seg run-meter__seg--idle" style="@verdict.WidthOf(verdict.Neutral)"></span>
+            }
         </div>
-        <div class="stat-card">
-            <span>耗时</span>
-            <strong class="stat-value">@FormatDuration(run.DurationMs)</strong>
-        </div>
-        <div class="stat-card">
-            <span>Token（合计 / prompt / completion）</span>
-            <strong class="stat-value">@(run.PromptTokens + run.CompletionTokens)</strong>
-            <span class="muted">@run.PromptTokens / @run.CompletionTokens</span>
-        </div>
-        <div class="stat-card">
-            <span>检查项结果</span>
-            <strong class="stat-value">@run.Results.Count</strong>
-        </div>
-    </div>
+    </section>
 
     @if (!string.IsNullOrWhiteSpace(run.ErrorMessage))
     {
-        <p class="error-text">执行错误：@run.ErrorMessage</p>
+        <p class="alert-line" role="alert"><strong>执行错误</strong><span>@run.ErrorMessage</span></p>
     }
 
-    <h2 class="section-title">Lark 通知</h2>
-    @if (larkNotifications.Count == 0)
-    {
-        <div class="empty">本轮没有 Lark 发送留痕。v1 走 mock 通道，通知服务写入 LarkNotification 后会在这里展示 Kind / IsMock / 发送结果。</div>
-    }
-    else
-    {
-        <p class="muted">按 ChecklistRunId 关联到本轮的发送留痕共 @larkNotifications.Count 条。</p>
-        <div class="table-scroll">
-            <table class="data">
-                <thead>
-                    <tr>
-                        <th>类型</th>
-                        <th>通道</th>
-                        <th>结果</th>
-                        <th>时间</th>
-                        <th>失败原因</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    @foreach (var notification in larkNotifications)
-                    {
-                        <tr>
-                            <td>@LarkKindText(notification.Kind)</td>
-                            <td>
-                                @if (notification.IsMock)
-                                {
-                                    <span class="badge status-canceled">mock</span>
-                                }
-                                else
-                                {
-                                    <span class="badge status-running">真实发送</span>
-                                }
-                            </td>
-                            <td>
-                                @if (notification.Succeeded)
-                                {
-                                    <span class="badge status-succeeded">成功</span>
-                                }
-                                else
-                                {
-                                    <span class="badge status-failed">失败</span>
-                                }
-                            </td>
-                            <td class="narrow-num">@notification.CreatedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss")</td>
-                            <td>@(notification.ErrorMessage ?? "-")</td>
-                        </tr>
-                    }
-                </tbody>
-            </table>
+    <section class="section" aria-labelledby="s-results">
+        <div class="section__head">
+            <span class="section__index">§ 01</span>
+            <h2 class="section__title" id="s-results">检查项结果</h2>
+            <span class="section__meta">@resultRows.Count 项 · 注意 @verdict.Warning · 异常 @verdict.Danger</span>
         </div>
-    }
-
-    <h2 class="section-title">检查项结果</h2>
-    @if (orderedResults.Count == 0)
-    {
-        <div class="empty">本轮没有检查项结果（执行链路可能尚未产生判定）。</div>
-    }
-    else
-    {
-        <div class="table-scroll">
-            <table class="data wide">
-                <thead>
-                    <tr>
-                        <th>检查项</th>
-                        <th>综合结果</th>
-                        <th>Agent 判定</th>
-                        <th>框架复核</th>
-                        <th>一致性</th>
-                        <th>重算值</th>
-                        <th>工具 / 耗时 / Token</th>
-                        <th>Finding</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    @foreach (var result in orderedResults)
+        <div class="section__body">
+            @if (resultRows.Count == 0)
+            {
+                <div class="empty">
+                    <span class="empty__glyph" aria-hidden="true">◇</span>
+                    <h3 class="empty__title">本轮没有检查项结果</h3>
+                    <p class="empty__copy">执行链路可能尚未产生判定；缺失项按待证处理，不能读作健康。</p>
+                </div>
+            }
+            else
+            {
+                <div class="result-list">
+                    @foreach (var row in resultRows)
                     {
-                        var info = ItemInfo(result.ChecklistItemId);
-                        var mismatch = IsMismatch(result);
-                        <tr class="@(mismatch ? "row-error" : null)">
-                            <td>
-                                @info.Title
-                                @if (info.Archived)
+                        var result = row.Result;
+                        var presentation = StatusPresenter.FromResult(result.Status, row.Severity, row.ItemKind);
+                        var observations = ObservationsFor(result);
+                        <details class="@ResultClass(row)">
+                            <summary class="result__summary">
+                                <span class="result__title">
+                                    @row.Title
+                                    @if (row.Archived)
+                                    {
+                                        <span class="chip">已归档</span>
+                                    }
+                                    else if (row.Missing)
+                                    {
+                                        <span class="chip">已删除</span>
+                                    }
+                                </span>
+                                <StatusBadge Value="@presentation" />
+                                <span class="result__meta">
+                                    @ConsistencyText(result) · @result.ToolCallCount 次 · @DisplayText.FormatDuration(result.DurationMs) · @(result.PromptTokens + result.CompletionTokens) token
+                                </span>
+                                @if (row.Mismatch)
                                 {
-                                    <span class="badge archived">已归档</span>
+                                    <span class="result__meta">复核不一致</span>
                                 }
-                                else if (info.Missing)
-                                {
-                                    <span class="badge archived">已删除</span>
-                                }
-                            </td>
-                            <td>
-                                <span class="@CheckStatusClass(result.Status)">@CheckStatusText(result.Status)</span>
-                                @if (mismatch)
-                                {
-                                    <span class="badge mismatch">不一致 · Error</span>
-                                }
-                            </td>
-                            <td>@VerdictText(result.AgentVerdict)</td>
-                            <td>@FrameworkVerdictText(result.FrameworkVerdict)</td>
-                            <td>@ConsistencyText(result)</td>
-                            <td class="mono">@OrDash(result.RecomputedValue)</td>
-                            <td class="narrow-num">
-                                @result.ToolCallCount 次
-                                <span class="muted">· @FormatDuration(result.DurationMs)</span>
-                                <br />
-                                <span class="muted">@(result.PromptTokens + result.CompletionTokens) token</span>
-                            </td>
-                            <td>
-                                @if (FindingFor(result.ChecklistItemId) is { } finding)
-                                {
-                                    <div class="inline-badges">
-                                        <span class="@SeverityClass(finding.Severity)">@SeverityText(finding.Severity)</span>
-                                        <span class="@FindingStatusClass(finding.Status)">@FindingStatusText(finding.Status)</span>
-                                        <span class="muted">Rule v@(finding.RuleVersion)</span>
-                                        @if (finding.CloseReason is { } reason)
-                                        {
-                                            <span class="muted">· @CloseReasonText(reason)</span>
-                                        }
+                            </summary>
+                            <div class="result__body">
+                                <div class="result__grid">
+                                    <div>
+                                        <p class="result__label">Agent 判定</p>
+                                        <p class="result__value">@VerdictText(result.AgentVerdict)</p>
                                     </div>
-                                    <div class="muted">@finding.Title</div>
-                                }
-                                else
-                                {
-                                    <span class="muted">-</span>
-                                }
-                            </td>
-                        </tr>
-                        <tr class="detail-row">
-                            <td colspan="8">
-                                <div class="result-detail">
-                                    @if (!string.IsNullOrWhiteSpace(result.Narrative))
-                                    {
-                                        <div><span class="meta-label">Narrative</span>@result.Narrative</div>
-                                    }
-                                    @if (!string.IsNullOrWhiteSpace(result.ErrorMessage))
-                                    {
-                                        <div class="error-text"><span class="meta-label">ErrorMessage</span>@result.ErrorMessage</div>
-                                    }
-                                    @if (ObservationsFor(result).Count > 0)
-                                    {
-                                        <div>
-                                            <span class="meta-label">观察项</span>
-                                            <ul class="observation-list">
-                                                @foreach (var observation in ObservationsFor(result))
+                                    <div>
+                                        <p class="result__label">框架复核</p>
+                                        <p class="result__value">@FrameworkVerdictText(result.FrameworkVerdict)</p>
+                                    </div>
+                                    <div>
+                                        <p class="result__label">一致性</p>
+                                        <p class="result__value">@ConsistencyText(result)</p>
+                                    </div>
+                                    <div>
+                                        <p class="result__label">重算值</p>
+                                        <p class="result__value mono">@DisplayText.OrDash(result.RecomputedValue)</p>
+                                    </div>
+                                    <div>
+                                        <p class="result__label">Finding</p>
+                                        <p class="result__value">
+                                            @if (FindingFor(result.ChecklistItemId) is { } finding)
+                                            {
+                                                <span class="status-line">
+                                                    <StatusBadge Value="@StatusPresenter.FromSeverity(finding.Severity)" />
+                                                    <StatusBadge Value="@StatusPresenter.FromFinding(finding.Status, finding.CloseReason)" />
+                                                    <span class="mono">v@(finding.RuleVersion)</span>
+                                                </span>
+                                                @if (!string.IsNullOrWhiteSpace(finding.Title))
                                                 {
-                                                    <li>@observation</li>
+                                                    <span class="note">@finding.Title</span>
                                                 }
-                                            </ul>
-                                        </div>
-                                    }
-                                    @if (!string.IsNullOrWhiteSpace(result.Evidence))
-                                    {
-                                        <details class="evidence">
-                                            <summary>证据（截断存储，展开查看全文）</summary>
-                                            <pre>@result.Evidence</pre>
-                                        </details>
-                                    }
+                                            }
+                                            else
+                                            {
+                                                <span class="note">本轮未形成 finding</span>
+                                            }
+                                        </p>
+                                    </div>
+                                    <div>
+                                        <p class="result__label">工具与 token</p>
+                                        <p class="result__value">
+                                            @result.ToolCallCount 次工具调用 · @DisplayText.FormatDuration(result.DurationMs) · @(result.PromptTokens + result.CompletionTokens) token
+                                        </p>
+                                    </div>
                                 </div>
-                            </td>
-                        </tr>
-                    }
-                </tbody>
-            </table>
-        </div>
-    }
 
-    <h2 class="section-title">工具调用</h2>
-    @if (run.ToolCalls.Count == 0)
-    {
-        <div class="empty">本轮没有工具调用记录（执行 agent / MCP 链路尚未产生调用）。</div>
-    }
-    else
-    {
-        <div class="table-scroll">
-            <table class="data wide">
-                <thead>
-                    <tr>
-                        <th>时间</th>
-                        <th>检查项</th>
-                        <th>角色 / 服务</th>
-                        <th>工具</th>
-                        <th>参数</th>
-                        <th>结果</th>
-                        <th>耗时</th>
-                        <th>状态</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    @foreach (var call in run.ToolCalls.OrderBy(x => x.CreatedAt))
-                    {
-                        var callItem = call.ChecklistItemId is { } callItemId ? ItemInfo(callItemId) : default;
-                        <tr>
-                            <td class="narrow-num">@call.CreatedAt.ToLocalTime().ToString("MM-dd HH:mm:ss")</td>
-                            <td>@(call.ChecklistItemId is null ? "-" : callItem.Title)</td>
-                            <td>
-                                @AgentRoleText(call.AgentRole)
-                                <span class="muted">· @(string.IsNullOrWhiteSpace(call.ServerName) ? "本地工具" : call.ServerName)</span>
-                            </td>
-                            <td class="mono">@call.ToolName</td>
-                            <td class="cell-json">
-                                @if (string.IsNullOrWhiteSpace(call.Arguments))
+                                @if (!string.IsNullOrWhiteSpace(result.Narrative))
                                 {
-                                    <span class="muted">-</span>
+                                    <div class="result__section">
+                                        <p class="result__section-title">Narrative</p>
+                                        <p class="result__text">@result.Narrative</p>
+                                    </div>
                                 }
-                                else
+
+                                @if (observations.Count > 0)
                                 {
-                                    <details>
-                                        <summary>@Shorten(call.Arguments, 80)</summary>
-                                        <pre>@call.Arguments</pre>
+                                    <div class="result__section">
+                                        <p class="result__section-title">观察项</p>
+                                        <ul class="result__list">
+                                            @foreach (var observation in observations)
+                                            {
+                                                <li>@observation</li>
+                                            }
+                                        </ul>
+                                    </div>
+                                }
+
+                                @if (!string.IsNullOrWhiteSpace(result.ErrorMessage))
+                                {
+                                    <div class="result__section">
+                                        <p class="result__section-title">ErrorMessage</p>
+                                        <p class="result__text">@result.ErrorMessage</p>
+                                    </div>
+                                }
+
+                                @if (!string.IsNullOrWhiteSpace(result.Evidence))
+                                {
+                                    <details class="evidence">
+                                        <summary>证据（截断存储，展开查看全文）</summary>
+                                        <div class="evidence__body">
+                                            <pre class="code">@result.Evidence</pre>
+                                        </div>
                                     </details>
                                 }
-                            </td>
-                            <td class="cell-json">
-                                @if (string.IsNullOrWhiteSpace(call.Result))
-                                {
-                                    <span class="muted">-</span>
-                                }
-                                else
-                                {
-                                    <details>
-                                        <summary>@Shorten(call.Result, 120)</summary>
-                                        <pre>@call.Result</pre>
-                                    </details>
-                                }
-                                @if (call.Truncated)
-                                {
-                                    <span class="badge archived">结果已截断（Truncated）</span>
-                                }
-                            </td>
-                            <td class="narrow-num">@FormatDuration(call.DurationMs)</td>
-                            <td>
-                                @if (call.Succeeded)
-                                {
-                                    <span class="badge status-succeeded">成功</span>
-                                }
-                                else
-                                {
-                                    <span class="badge status-failed">失败</span>
-                                    @if (!string.IsNullOrWhiteSpace(call.ErrorMessage))
-                                    {
-                                        <div class="muted">@Shorten(call.ErrorMessage, 120)</div>
-                                    }
-                                }
-                            </td>
-                        </tr>
+                            </div>
+                        </details>
                     }
-                </tbody>
-            </table>
+                </div>
+            }
         </div>
-    }
+    </section>
 
-    <h2 class="section-title">执行快照</h2>
-    @if (snapshot is null)
-    {
-        @if (!string.IsNullOrWhiteSpace(snapshotError))
-        {
-            <p class="muted">@snapshotError</p>
-        }
-        else
-        {
-            <p class="muted">快照解析失败，以下为原始 JSON。</p>
-        }
-        <pre class="snapshot">@run.SnapshotJson</pre>
-    }
-    else
-    {
-        <p class="muted">
-            快照检查单：@snapshot.Name
-            ｜频率：@FrequencyText(snapshot.Frequency)
-            ｜触发：@TriggerText(snapshot.Trigger)
-            ｜检查项 @snapshot.Items.Count 个
-            ｜通用手册 @snapshot.GeneralRunbooks.Count 份、被引用专用手册 @snapshot.ReferencedRunbooks.Count 份
-        </p>
-
-        @if (snapshot.Items.Count == 0)
-        {
-            <div class="empty">快照中没有检查项（可能来自骨架阶段或检查单未配置检查项）。</div>
-        }
-        else
-        {
-            <div class="table-scroll">
-                <table class="data wide">
-                    <thead>
-                        <tr>
-                            <th>顺序</th>
-                            <th>检查项</th>
-                            <th>断言</th>
-                            <th>级别</th>
-                            <th>RuleVersion</th>
-                            <th>当前状态</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        @foreach (var item in snapshot.Items.OrderBy(x => x.SortOrder))
-                        {
-                            var info = ItemInfo(item.ItemId);
+    <section class="section" aria-labelledby="s-tools">
+        <div class="section__head">
+            <span class="section__index">§ 02</span>
+            <h2 class="section__title" id="s-tools">工具调用</h2>
+            <span class="section__meta">@run.ToolCalls.Count 次调用 · 参数与结果折叠</span>
+        </div>
+        <div class="section__body">
+            @if (run.ToolCalls.Count == 0)
+            {
+                <div class="empty">
+                    <span class="empty__glyph" aria-hidden="true">◇</span>
+                    <h3 class="empty__title">本轮没有工具调用记录</h3>
+                    <p class="empty__copy">执行 agent / MCP 链路尚未产生调用；没有取证时判定只能按待证展示。</p>
+                </div>
+            }
+            else
+            {
+                <div class="table-wrap" role="region" aria-label="工具调用审计" tabindex="0">
+                    <table class="table table--wide">
+                        <caption class="sr-only">本轮工具调用：时间、检查项、角色、服务、工具、参数、结果、耗时与状态</caption>
+                        <thead>
                             <tr>
-                                <td>@item.SortOrder</td>
-                                <td>@item.Title</td>
-                                <td class="mono">@AssertionText(item)</td>
-                                <td>@(item.Severity is { } severity ? SeverityText(severity) : "-")</td>
-                                <td>v@(item.RuleVersion)</td>
-                                <td>
-                                    @if (info.Missing)
-                                    {
-                                        <span class="badge archived">已删除</span>
-                                    }
-                                    else if (info.Archived)
-                                    {
-                                        <span class="badge archived">已归档</span>
-                                    }
-                                    else
-                                    {
-                                        <span class="muted">在册</span>
-                                    }
-                                </td>
+                                <th scope="col">时间</th>
+                                <th scope="col">检查项</th>
+                                <th scope="col">角色</th>
+                                <th scope="col">服务</th>
+                                <th scope="col">工具</th>
+                                <th scope="col">参数</th>
+                                <th scope="col">结果</th>
+                                <th scope="col" class="num">耗时</th>
+                                <th scope="col">状态</th>
                             </tr>
-                        }
-                    </tbody>
-                </table>
-            </div>
-        }
-
-        <h3 class="subsection-title">通用手册（执行时自动注入）</h3>
-        @if (snapshot.GeneralRunbooks.Count == 0)
-        {
-            <p class="muted">本检查单所属项目当时没有通用手册。</p>
-        }
-        else
-        {
-            @foreach (var runbook in snapshot.GeneralRunbooks)
-            {
-                <div class="panel">
-                    <h4>
-                        @runbook.Title
-                        <span class="badge">@RunbookKindText(runbook.Kind)</span>
-                        @if (RunbookMarker(runbook.RunbookId) is { } marker)
-                        {
-                            <span class="badge archived">@marker</span>
-                        }
-                    </h4>
-                    <pre class="snapshot">@runbook.Body</pre>
+                        </thead>
+                        <tbody>
+                            @foreach (var call in run.ToolCalls.OrderBy(x => x.CreatedAt))
+                            {
+                                <tr>
+                                    <td class="mono">@call.CreatedAt.ToLocalTime().ToString("MM-dd HH:mm:ss")</td>
+                                    <td>@ToolCallItemText(call)</td>
+                                    <td>@AgentRoleText(call.AgentRole)</td>
+                                    <td>@(string.IsNullOrWhiteSpace(call.ServerName) ? "本地工具" : call.ServerName)</td>
+                                    <td class="mono">@call.ToolName</td>
+                                    <td>
+                                        @if (string.IsNullOrWhiteSpace(call.Arguments))
+                                        {
+                                            <span class="note">-</span>
+                                        }
+                                        else
+                                        {
+                                            <details class="evidence">
+                                                <summary>@DisplayText.Shorten(call.Arguments, 80)</summary>
+                                                <div class="evidence__body">
+                                                    <pre class="code">@call.Arguments</pre>
+                                                </div>
+                                            </details>
+                                        }
+                                    </td>
+                                    <td>
+                                        @if (string.IsNullOrWhiteSpace(call.Result))
+                                        {
+                                            <span class="note">-</span>
+                                        }
+                                        else
+                                        {
+                                            <details class="evidence">
+                                                <summary>@DisplayText.Shorten(call.Result, 120)</summary>
+                                                <div class="evidence__body">
+                                                    <pre class="code">@call.Result</pre>
+                                                </div>
+                                            </details>
+                                        }
+                                        @if (call.Truncated)
+                                        {
+                                            <span class="chip">结果已截断</span>
+                                        }
+                                    </td>
+                                    <td class="num">@DisplayText.FormatDuration(call.DurationMs)</td>
+                                    <td>
+                                        @if (call.Succeeded)
+                                        {
+                                            <span class="chip">成功</span>
+                                        }
+                                        else
+                                        {
+                                            <span class="chip">失败</span>
+                                            @if (!string.IsNullOrWhiteSpace(call.ErrorMessage))
+                                            {
+                                                <span class="note">@DisplayText.Shorten(call.ErrorMessage, 80)</span>
+                                            }
+                                        }
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
                 </div>
             }
-        }
-
-        <h3 class="subsection-title">被引用专用手册</h3>
-        @if (snapshot.ReferencedRunbooks.Count == 0)
-        {
-            <p class="muted">本检查单没有引用专用手册。</p>
-        }
-        else
-        {
-            @foreach (var runbook in snapshot.ReferencedRunbooks)
-            {
-                <div class="panel">
-                    <h4>
-                        @runbook.Title
-                        <span class="badge">@RunbookKindText(runbook.Kind)</span>
-                        @if (RunbookMarker(runbook.RunbookId) is { } marker)
-                        {
-                            <span class="badge archived">@marker</span>
-                        }
-                    </h4>
-                    <pre class="snapshot">@runbook.Body</pre>
-                </div>
-            }
-        }
-
-        <h3 class="subsection-title">快照中的 finding 现状</h3>
-        @if (snapshot.Findings.Count == 0)
-        {
-            <p class="muted">执行时没有关联 finding。</p>
-        }
-        else
-        {
-            <table class="data">
-                <thead>
-                    <tr>
-                        <th>检查项</th>
-                        <th>状态</th>
-                        <th>RuleVersion</th>
-                        <th>标题</th>
-                        <th>首次出现</th>
-                        <th>最近出现</th>
-                        <th>恢复时间</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    @foreach (var finding in snapshot.Findings)
-                    {
-                        <tr>
-                            <td>@ItemInfo(finding.ChecklistItemId).Title</td>
-                            <td><span class="@FindingStatusClass(finding.Status)">@FindingStatusText(finding.Status)</span></td>
-                            <td>v@(finding.RuleVersion)</td>
-                            <td>@(finding.Title ?? "-")</td>
-                            <td class="narrow-num">@finding.FirstSeenAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm")</td>
-                            <td class="narrow-num">@finding.LastSeenAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm")</td>
-                            <td class="narrow-num">@(finding.ResolvedAt is { } resolvedAt ? resolvedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm") : "-")</td>
-                        </tr>
-                    }
-                </tbody>
-            </table>
-        }
-    }
-
-    <h2 class="section-title">AI 摘要</h2>
-    @if (run.Summary is null)
-    {
-        <div class="empty">本轮没有 AI 摘要（摘要 agent 生成后会写入 AiSummary 并在这里展示）。</div>
-    }
-    else
-    {
-        <div class="panel">
-            <div class="inline-badges">
-                <span class="badge">RunSummary</span>
-                @if (!string.IsNullOrWhiteSpace(run.Summary.Model))
-                {
-                    <span class="badge">模型 @run.Summary.Model</span>
-                }
-                @if (run.Summary.FallbackUsed)
-                {
-                    <span class="badge status-canceled">模板兜底</span>
-                }
-                else
-                {
-                    <span class="badge status-succeeded">AI 生成</span>
-                }
-                <span class="muted">
-                    token @(run.Summary.PromptTokens + run.Summary.CompletionTokens)
-                    · 耗时 @FormatDuration(run.Summary.DurationMs)
-                    · @run.Summary.CreatedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss")
-                </span>
-            </div>
-            <pre class="report">@run.Summary.Content</pre>
         </div>
-    }
+    </section>
+
+    <section class="section" aria-labelledby="s-observations">
+        <div class="section__head">
+            <span class="section__index">§ 03</span>
+            <h2 class="section__title" id="s-observations">观察</h2>
+            <span class="section__meta">@ObservationCount 条 · 只进日报观察</span>
+        </div>
+        <div class="section__body">
+            @if (observationGroups.Count == 0)
+            {
+                <p class="note">本轮没有额外观察项。观察只记录规则外发现，不单独建 Finding。</p>
+            }
+            else
+            {
+                @foreach (var group in observationGroups)
+                {
+                    <div class="result__section">
+                        <p class="result__section-title">
+                            @group.Title
+                            @if (group.Archived)
+                            {
+                                <span class="chip">已归档</span>
+                            }
+                            else if (group.Missing)
+                            {
+                                <span class="chip">已删除</span>
+                            }
+                        </p>
+                        <ul class="result__list">
+                            @foreach (var observation in group.Observations)
+                            {
+                                <li>@observation</li>
+                            }
+                        </ul>
+                    </div>
+                }
+                <p class="note">观察项只进日报观察段，不建 Finding、不发 Lark。</p>
+            }
+        </div>
+    </section>
+
+    <section class="section" aria-labelledby="s-snapshot">
+        <div class="section__head">
+            <span class="section__index">§ 04</span>
+            <h2 class="section__title" id="s-snapshot">执行快照</h2>
+            <span class="section__meta">@SnapshotMeta</span>
+        </div>
+        <div class="section__body">
+            <details class="evidence">
+                <summary>@SnapshotSummary</summary>
+                <div class="evidence__body">
+                    @if (snapshot is null)
+                    {
+                        <p class="note">@(snapshotError ?? "快照解析失败，展开查看原始 JSON。")</p>
+                        <pre class="code">@run.SnapshotJson</pre>
+                    }
+                    else
+                    {
+                        <p class="note">
+                            快照检查单：@snapshot.Name
+                            ｜频率：@DisplayText.FrequencyText(snapshot.Frequency)
+                            ｜触发：@DisplayText.TriggerText(snapshot.Trigger)
+                        </p>
+
+                        @if (snapshot.Items.Count == 0)
+                        {
+                            <div class="empty">
+                                <span class="empty__glyph" aria-hidden="true">◇</span>
+                                <h3 class="empty__title">快照中没有检查项</h3>
+                                <p class="empty__copy">可能来自骨架阶段，或检查单当时未配置检查项。</p>
+                            </div>
+                        }
+                        else
+                        {
+                            <div class="table-wrap" role="region" aria-label="执行快照检查项" tabindex="0">
+                                <table class="table table--wide">
+                                    <caption class="sr-only">执行快照中的检查项定义、断言与当前状态</caption>
+                                    <thead>
+                                        <tr>
+                                            <th scope="col" class="num">顺序</th>
+                                            <th scope="col">检查项</th>
+                                            <th scope="col">断言</th>
+                                            <th scope="col">级别</th>
+                                            <th scope="col">RuleVersion</th>
+                                            <th scope="col">当前状态</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        @foreach (var item in snapshot.Items.OrderBy(x => x.SortOrder))
+                                        {
+                                            var info = ItemInfo(item.ItemId);
+                                            <tr>
+                                                <td class="num">@item.SortOrder</td>
+                                                <td>@item.Title</td>
+                                                <td class="mono">@AssertionText(item)</td>
+                                                <td>
+                                                    @if (item.Severity is { } severity)
+                                                    {
+                                                        <StatusBadge Value="@StatusPresenter.FromSeverity(severity)" />
+                                                    }
+                                                    else
+                                                    {
+                                                        <span class="note">未配置</span>
+                                                    }
+                                                </td>
+                                                <td class="mono">v@(item.RuleVersion)</td>
+                                                <td>
+                                                    @if (info.Missing)
+                                                    {
+                                                        <span class="chip">已删除</span>
+                                                    }
+                                                    else if (info.Archived)
+                                                    {
+                                                        <span class="chip">已归档</span>
+                                                    }
+                                                    else
+                                                    {
+                                                        <span class="chip chip--ok">在册</span>
+                                                    }
+                                                </td>
+                                            </tr>
+                                        }
+                                    </tbody>
+                                </table>
+                            </div>
+                        }
+
+                        <h3 class="panel__title" style="margin-top: 24px;">通用手册（执行时自动注入）</h3>
+                        @if (snapshot.GeneralRunbooks.Count == 0)
+                        {
+                            <p class="note">本检查单所属项目当时没有通用手册。</p>
+                        }
+                        else
+                        {
+                            @foreach (var runbook in snapshot.GeneralRunbooks)
+                            {
+                                <div class="result__section">
+                                    <h4 class="panel__title">
+                                        @runbook.Title
+                                        <span class="chip">@DisplayText.RunbookKindText(runbook.Kind)</span>
+                                        @if (RunbookMarker(runbook.RunbookId) is { } marker)
+                                        {
+                                            <span class="chip">@marker</span>
+                                        }
+                                    </h4>
+                                    <details class="evidence">
+                                        <summary>正文 · @runbook.Body.Length 字 · 查看全文</summary>
+                                        <div class="evidence__body">
+                                            <pre class="code">@runbook.Body</pre>
+                                        </div>
+                                    </details>
+                                </div>
+                            }
+                        }
+
+                        <h3 class="panel__title" style="margin-top: 24px;">被引用专用手册</h3>
+                        @if (snapshot.ReferencedRunbooks.Count == 0)
+                        {
+                            <p class="note">本检查单没有引用专用手册。</p>
+                        }
+                        else
+                        {
+                            @foreach (var runbook in snapshot.ReferencedRunbooks)
+                            {
+                                <div class="result__section">
+                                    <h4 class="panel__title">
+                                        @runbook.Title
+                                        <span class="chip">@DisplayText.RunbookKindText(runbook.Kind)</span>
+                                        @if (RunbookMarker(runbook.RunbookId) is { } marker)
+                                        {
+                                            <span class="chip">@marker</span>
+                                        }
+                                    </h4>
+                                    <details class="evidence">
+                                        <summary>正文 · @runbook.Body.Length 字 · 查看全文</summary>
+                                        <div class="evidence__body">
+                                            <pre class="code">@runbook.Body</pre>
+                                        </div>
+                                    </details>
+                                </div>
+                            }
+                        }
+
+                        <h3 class="panel__title" style="margin-top: 24px;">快照中的 finding 现状</h3>
+                        @if (snapshot.Findings.Count == 0)
+                        {
+                            <p class="note">执行时没有关联 finding。</p>
+                        }
+                        else
+                        {
+                            <div class="table-wrap" role="region" aria-label="快照 finding 现状" tabindex="0">
+                                <table class="table table--wide">
+                                    <caption class="sr-only">执行快照中固化的 finding 现状</caption>
+                                    <thead>
+                                        <tr>
+                                            <th scope="col">检查项</th>
+                                            <th scope="col">状态</th>
+                                            <th scope="col">RuleVersion</th>
+                                            <th scope="col">标题</th>
+                                            <th scope="col">首次出现</th>
+                                            <th scope="col">最近出现</th>
+                                            <th scope="col">恢复时间</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        @foreach (var finding in snapshot.Findings)
+                                        {
+                                            <tr>
+                                                <td>@ItemInfo(finding.ChecklistItemId).Title</td>
+                                                <td><StatusBadge Value="@StatusPresenter.FromFinding(finding.Status)" /></td>
+                                                <td class="mono">v@(finding.RuleVersion)</td>
+                                                <td>@DisplayText.OrDash(finding.Title)</td>
+                                                <td class="mono">@finding.FirstSeenAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm")</td>
+                                                <td class="mono">@finding.LastSeenAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm")</td>
+                                                <td class="mono">@(finding.ResolvedAt is { } resolvedAt ? resolvedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm") : "-")</td>
+                                            </tr>
+                                        }
+                                    </tbody>
+                                </table>
+                            </div>
+                        }
+                    }
+                </div>
+            </details>
+        </div>
+    </section>
+
+    <section class="section" aria-labelledby="s-notify">
+        <div class="section__head">
+            <span class="section__index">§ 05</span>
+            <h2 class="section__title" id="s-notify">通知与摘要</h2>
+            <span class="section__meta">通知 @larkNotifications.Count 条 · 摘要 @(run.Summary is null ? "无" : "1 份")</span>
+        </div>
+        <div class="section__body">
+            <h3 class="panel__title">Lark 留痕</h3>
+            @if (larkNotifications.Count == 0)
+            {
+                <p class="note">本轮没有 Lark 发送留痕。v1 走 mock 通道，通知服务写入 LarkNotification 后会在这里展示类型、通道与发送结果。</p>
+            }
+            else
+            {
+                <div class="table-wrap" role="region" aria-label="Lark 通知留痕" tabindex="0">
+                    <table class="table">
+                        <caption class="sr-only">按执行轮次关联的 Lark 发送留痕</caption>
+                        <thead>
+                            <tr>
+                                <th scope="col">类型</th>
+                                <th scope="col">通道</th>
+                                <th scope="col">结果</th>
+                                <th scope="col">时间</th>
+                                <th scope="col">失败原因</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var notification in larkNotifications)
+                            {
+                                <tr>
+                                    <td>@LarkKindText(notification.Kind)</td>
+                                    <td>
+                                        <span class="chip">@(notification.IsMock ? "mock" : "真实")</span>
+                                    </td>
+                                    <td>
+                                        <span class="chip">@(notification.Succeeded ? "已发送" : "发送失败")</span>
+                                    </td>
+                                    <td class="mono">@notification.CreatedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss")</td>
+                                    <td>@DisplayText.OrDash(notification.ErrorMessage)</td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            }
+
+            <h3 class="panel__title" style="margin-top: 24px;">AI 摘要</h3>
+            @if (run.Summary is null)
+            {
+                <p class="note">本轮没有 AI 摘要（摘要 agent 生成后会写入 AiSummary 并在这里展示）。</p>
+            }
+            else
+            {
+                <div class="status-line">
+                    @if (!string.IsNullOrWhiteSpace(run.Summary.Model))
+                    {
+                        <span class="chip">模型 @run.Summary.Model</span>
+                    }
+                    <span class="chip">token @(run.Summary.PromptTokens + run.Summary.CompletionTokens)</span>
+                    <span class="chip">耗时 @DisplayText.FormatDuration(run.Summary.DurationMs)</span>
+                    @if (run.Summary.FallbackUsed)
+                    {
+                        <span class="chip">模板兜底</span>
+                    }
+                    else
+                    {
+                        <span class="chip">AI 生成</span>
+                    }
+                    <span class="note">@run.Summary.CreatedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss")</span>
+                </div>
+                <details class="evidence">
+                    <summary>摘要正文 · @run.Summary.Content.Length 字 · 查看全文</summary>
+                    <div class="evidence__body">
+                        <pre class="code">@run.Summary.Content</pre>
+                    </div>
+                </details>
+            }
+        </div>
+    </section>
 }
 
 @code {
@@ -505,107 +675,222 @@ else
 
     private static readonly JsonSerializerOptions SnapshotJsonOptions = new(JsonSerializerDefaults.Web);
 
-    private sealed record ItemState(string Title, bool Archived);
+    private sealed record ItemState(string Title, bool Archived, bool HasAssertion);
 
+    private sealed record ResultRow(
+        CheckResult Result,
+        string Title,
+        bool Archived,
+        bool Missing,
+        bool Mismatch,
+        Severity? Severity,
+        StatusItemKind ItemKind);
+
+    private sealed record ObservationGroup(
+        string Title,
+        bool Archived,
+        bool Missing,
+        IReadOnlyList<string> Observations);
+
+    private WorkspaceContext workspace = WorkspaceContext.Empty;
     private ChecklistRun? run;
     private ChecklistSnapshot? snapshot;
     private string? snapshotError;
-    private List<CheckResult> orderedResults = [];
+    private List<ResultRow> resultRows = [];
+    private List<ObservationGroup> observationGroups = [];
+    private RunVerdict verdict = RunVerdict.Empty;
     private List<LarkNotification> larkNotifications = [];
+    private string? loadError;
     private readonly Dictionary<Guid, ItemState> itemStates = [];
     private readonly Dictionary<Guid, (bool Archived, bool Missing)> runbookStates = [];
     private readonly Dictionary<Guid, Finding> findingsByItem = [];
 
+    private string ContextQuery => workspace.QuerySuffix;
+    private string RunsHref => $"/runs{ContextQuery}";
+    private string ShortRunId => run is null ? "-" : run.Id.ToString("N")[..8];
+
+    private string ConclusionLead => run is null ? "本轮" : $"本轮{StatusPresenter.FromRun(run.Status).Label}";
+
+    private string RunCopy
+    {
+        get
+        {
+            if (run is null)
+            {
+                return string.Empty;
+            }
+
+            var start = run.StartedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm");
+            var parts = new List<string> { $"开始于 {start}" };
+            if (run.CompletedAt is { } completed)
+            {
+                parts.Add($"结束于 {completed.ToLocalTime():yyyy-MM-dd HH:mm}");
+            }
+
+            parts.Add($"耗时 {DisplayText.FormatDuration(run.DurationMs)}");
+            parts.Add($"共 {resultRows.Count} 个检查项结果");
+            var copy = string.Join("，", parts) + "。";
+            copy += string.IsNullOrWhiteSpace(run.ErrorMessage)
+                ? "执行过程没有记录到错误。"
+                : "执行过程记录了执行错误，详见下方提示。";
+            return copy;
+        }
+    }
+
+    private string SnapshotSummary => snapshot is null
+        ? "执行快照 · 解析失败 · 展开查看原始 JSON"
+        : $"执行快照 · {snapshot.Items.Count} 个检查项 · 通用手册 {snapshot.GeneralRunbooks.Count} / 专用 {snapshot.ReferencedRunbooks.Count}";
+
+    private string SnapshotMeta => snapshot is null
+        ? "解析失败"
+        : $"{snapshot.Items.Count} 项 · 通用 {snapshot.GeneralRunbooks.Count} / 专用 {snapshot.ReferencedRunbooks.Count}";
+
+    private int ObservationCount => observationGroups.Sum(x => x.Observations.Count);
+
     protected override async Task OnParametersSetAsync()
     {
-        await using var db = await DbFactory.CreateDbContextAsync();
-
-        run = await db.ChecklistRuns
-            .Include(x => x.Checklist)
-            .Include(x => x.Environment)
-            .Include(x => x.Results)
-            .Include(x => x.ToolCalls)
-            .Include(x => x.Summary)
-            .AsNoTracking()
-            .AsSplitQuery()
-            .SingleOrDefaultAsync(x => x.Id == Id);
-
-        if (run is null)
+        try
         {
-            return;
-        }
+            workspace = await Workspace.ResolveAsync(WorkspaceContextService.ReadQueryValue(Nav));
 
-        ParseSnapshot();
+            await using var db = await DbFactory.CreateDbContextAsync();
 
-        var itemIds = new HashSet<Guid>(run.Results.Select(x => x.ChecklistItemId));
-        if (snapshot is not null)
-        {
-            foreach (var item in snapshot.Items)
+            run = await db.ChecklistRuns
+                .Include(x => x.Checklist)
+                .Include(x => x.Environment)
+                .Include(x => x.Results)
+                .Include(x => x.ToolCalls)
+                .Include(x => x.Summary)
+                .AsNoTracking()
+                .AsSplitQuery()
+                .SingleOrDefaultAsync(x => x.Id == Id);
+
+            if (run is null)
             {
-                itemIds.Add(item.ItemId);
+                return;
             }
-        }
-        foreach (var toolCall in run.ToolCalls)
-        {
-            if (toolCall.ChecklistItemId is { } toolCallItemId)
+
+            ParseSnapshot();
+
+            itemStates.Clear();
+            runbookStates.Clear();
+            findingsByItem.Clear();
+
+            var itemIds = new HashSet<Guid>(run.Results.Select(x => x.ChecklistItemId));
+            if (snapshot is not null)
             {
-                itemIds.Add(toolCallItemId);
+                foreach (var item in snapshot.Items)
+                {
+                    itemIds.Add(item.ItemId);
+                }
             }
-        }
+            foreach (var toolCall in run.ToolCalls)
+            {
+                if (toolCall.ChecklistItemId is { } toolCallItemId)
+                {
+                    itemIds.Add(toolCallItemId);
+                }
+            }
 
-        var items = await db.ChecklistItems
-            .Where(x => itemIds.Contains(x.Id))
-            .AsNoTracking()
-            .ToListAsync();
-        foreach (var item in items)
-        {
-            itemStates[item.Id] = new ItemState(item.Title, item.IsArchived);
-        }
-
-        if (snapshot is not null)
-        {
-            var runbookIds = snapshot.GeneralRunbooks.Select(x => x.RunbookId)
-                .Concat(snapshot.ReferencedRunbooks.Select(x => x.RunbookId))
-                .Distinct()
-                .ToList();
-            var runbooks = await db.Runbooks
-                .Where(x => runbookIds.Contains(x.Id))
+            var items = await db.ChecklistItems
+                .Where(x => itemIds.Contains(x.Id))
                 .AsNoTracking()
                 .ToListAsync();
-            var existingRunbookIds = runbooks.Select(x => x.Id).ToHashSet();
-            foreach (var runbook in runbooks)
+            foreach (var item in items)
             {
-                runbookStates[runbook.Id] = (runbook.IsArchived, false);
+                itemStates[item.Id] = new ItemState(item.Title, item.IsArchived, item.HasAssertion);
             }
-            foreach (var runbookId in runbookIds.Where(x => !existingRunbookIds.Contains(x)))
-            {
-                runbookStates[runbookId] = (false, true);
-            }
-        }
 
-        findingsByItem.Clear();
-        var findings = await db.Findings
-            .Where(x => x.ChecklistId == run.ChecklistId && x.EnvironmentId == run.EnvironmentId)
-            .AsNoTracking()
-            .ToListAsync();
-        foreach (var finding in findings)
+            if (snapshot is not null)
+            {
+                var runbookIds = snapshot.GeneralRunbooks.Select(x => x.RunbookId)
+                    .Concat(snapshot.ReferencedRunbooks.Select(x => x.RunbookId))
+                    .Distinct()
+                    .ToList();
+                var runbooks = await db.Runbooks
+                    .Where(x => runbookIds.Contains(x.Id))
+                    .AsNoTracking()
+                    .ToListAsync();
+                var existingRunbookIds = runbooks.Select(x => x.Id).ToHashSet();
+                foreach (var runbook in runbooks)
+                {
+                    runbookStates[runbook.Id] = (runbook.IsArchived, false);
+                }
+                foreach (var runbookId in runbookIds.Where(x => !existingRunbookIds.Contains(x)))
+                {
+                    runbookStates[runbookId] = (false, true);
+                }
+            }
+
+            var findings = await db.Findings
+                .Where(x => x.ChecklistId == run.ChecklistId && x.EnvironmentId == run.EnvironmentId)
+                .AsNoTracking()
+                .ToListAsync();
+            foreach (var finding in findings)
+            {
+                if (!findingsByItem.TryGetValue(finding.ChecklistItemId, out var existing)
+                    || finding.LastSeenAt > existing.LastSeenAt)
+                {
+                    findingsByItem[finding.ChecklistItemId] = finding;
+                }
+            }
+
+            larkNotifications = await db.LarkNotifications
+                .Where(x => x.ChecklistRunId == run.Id)
+                .OrderBy(x => x.CreatedAt)
+                .AsNoTracking()
+                .ToListAsync();
+
+            var orderedResults = run.Results
+                .OrderBy(x => ItemSortOrder(x.ChecklistItemId))
+                .ThenBy(x => x.CreatedAt)
+                .ToList();
+
+            BuildResultRows(orderedResults);
+        }
+        catch (Exception ex)
         {
-            if (!findingsByItem.TryGetValue(finding.ChecklistItemId, out var existing)
-                || finding.LastSeenAt > existing.LastSeenAt)
-            {
-                findingsByItem[finding.ChecklistItemId] = finding;
-            }
+            loadError = ex.Message;
+        }
+    }
+
+    /// <summary>
+    /// 信息型判定：优先看执行快照里的断言字段；快照缺失时回退当前检查项的 HasAssertion，
+    /// 仍然判不出来时按判定型处理（宁可待证，不把断言型当信息型）。
+    /// </summary>
+    private bool IsInformational(CheckResult result, ChecklistSnapshotItem? snapshotItem)
+    {
+        if (snapshotItem is not null)
+        {
+            return string.IsNullOrWhiteSpace(snapshotItem.ToolName) && snapshotItem.Operator is null;
         }
 
-        larkNotifications = await db.LarkNotifications
-            .Where(x => x.ChecklistRunId == run.Id)
-            .OrderBy(x => x.CreatedAt)
-            .AsNoTracking()
-            .ToListAsync();
+        return itemStates.TryGetValue(result.ChecklistItemId, out var state) && !state.HasAssertion;
+    }
 
-        orderedResults = run.Results
-            .OrderBy(x => ItemSortOrder(x.ChecklistItemId))
-            .ThenBy(x => x.CreatedAt)
+    private void BuildResultRows(IReadOnlyList<CheckResult> orderedResults)
+    {
+        resultRows = orderedResults.Select(result =>
+        {
+            var info = ItemInfo(result.ChecklistItemId);
+            var snapshotItem = SnapshotItemFor(result.ChecklistItemId);
+            var informational = IsInformational(result, snapshotItem);
+            return new ResultRow(
+                result,
+                info.Title,
+                info.Archived,
+                info.Missing,
+                IsMismatch(result),
+                snapshotItem?.Severity,
+                informational ? StatusItemKind.Informational : StatusItemKind.Judgement);
+        }).ToList();
+
+        verdict = RunVerdictBuilder.Build(resultRows.Select(x => (x.Result.Status, x.Severity, x.ItemKind)));
+
+        observationGroups = resultRows
+            .Select(row => (row, observations: ObservationsFor(row.Result)))
+            .Where(x => x.observations.Count > 0)
+            .Select(x => new ObservationGroup(x.row.Title, x.row.Archived, x.row.Missing, x.observations))
             .ToList();
     }
 
@@ -622,7 +907,7 @@ else
                 || parsed.ReferencedRunbooks is null
                 || parsed.Findings is null)
             {
-                snapshotError = "快照内容不完整（可能来自骨架阶段），以下为原始 JSON。";
+                snapshotError = "快照内容不完整（可能来自骨架阶段），展开查看原始 JSON。";
                 return;
             }
 
@@ -630,21 +915,27 @@ else
         }
         catch (JsonException)
         {
-            snapshotError = "快照解析失败，以下为原始 JSON。";
+            snapshotError = "快照解析失败，展开查看原始 JSON。";
         }
     }
 
     private int ItemSortOrder(Guid itemId)
         => snapshot?.Items.FirstOrDefault(x => x.ItemId == itemId)?.SortOrder ?? int.MaxValue;
 
+    private ChecklistSnapshotItem? SnapshotItemFor(Guid itemId)
+        => snapshot?.Items.FirstOrDefault(x => x.ItemId == itemId);
+
     private (string Title, bool Archived, bool Missing) ItemInfo(Guid itemId)
     {
-        var snapshotItem = snapshot?.Items.FirstOrDefault(x => x.ItemId == itemId);
+        var snapshotItem = SnapshotItemFor(itemId);
         itemStates.TryGetValue(itemId, out var state);
         var missing = !itemStates.ContainsKey(itemId);
-        var title = snapshotItem?.Title ?? state?.Title ?? "(已归档/已删除检查项)";
+        var title = snapshotItem?.Title ?? state?.Title ?? DisplayText.MissingName;
         return (title, state?.Archived ?? false, missing);
     }
+
+    private string ToolCallItemText(ToolCallLog call)
+        => call.ChecklistItemId is { } itemId ? ItemInfo(itemId).Title : "-";
 
     private string? RunbookMarker(Guid runbookId)
     {
@@ -681,6 +972,9 @@ else
 
         return [result.ObservationsJson];
     }
+
+    private static string ResultClass(ResultRow row)
+        => row.Mismatch ? "result result--mismatch" : "result";
 
     private static bool IsMismatch(CheckResult result)
     {
@@ -752,89 +1046,6 @@ else
         _ => verdict.ToString() ?? "-",
     };
 
-    private static string CheckStatusText(CheckResultStatus status) => status switch
-    {
-        CheckResultStatus.Ok => "Ok",
-        CheckResultStatus.Abnormal => "Abnormal",
-        CheckResultStatus.InsufficientEvidence => "证据不足",
-        CheckResultStatus.Error => "Error",
-        _ => status.ToString(),
-    };
-
-    private static string CheckStatusClass(CheckResultStatus status) => status switch
-    {
-        CheckResultStatus.Ok => "badge status-succeeded",
-        CheckResultStatus.Abnormal => "badge status-failed",
-        CheckResultStatus.InsufficientEvidence => "badge status-pending",
-        CheckResultStatus.Error => "badge status-failed",
-        _ => "badge",
-    };
-
-    private static string RunStatusText(RunStatus status) => status switch
-    {
-        RunStatus.Pending => "等待中",
-        RunStatus.Running => "执行中",
-        RunStatus.Succeeded => "成功",
-        RunStatus.Failed => "失败",
-        RunStatus.Canceled => "已取消",
-        RunStatus.Skipped => "已跳过",
-        _ => status.ToString(),
-    };
-
-    private static string RunStatusClass(RunStatus status) => status switch
-    {
-        RunStatus.Pending => "badge status-pending",
-        RunStatus.Running => "badge status-running",
-        RunStatus.Succeeded => "badge status-succeeded",
-        RunStatus.Failed => "badge status-failed",
-        RunStatus.Canceled => "badge status-canceled",
-        RunStatus.Skipped => "badge status-skipped",
-        _ => "badge",
-    };
-
-    private static string SeverityText(Severity severity) => severity switch
-    {
-        Severity.Info => "Info",
-        Severity.Warning => "Warning",
-        Severity.Critical => "Critical",
-        _ => severity.ToString(),
-    };
-
-    private static string SeverityClass(Severity severity) => severity switch
-    {
-        Severity.Info => "badge severity-info",
-        Severity.Warning => "badge severity-warning",
-        Severity.Critical => "badge severity-critical",
-        _ => "badge",
-    };
-
-    private static string FindingStatusText(FindingStatus status)
-        => status == FindingStatus.Open ? "未恢复" : "已恢复";
-
-    private static string FindingStatusClass(FindingStatus status)
-        => status == FindingStatus.Open ? "badge status-failed" : "badge status-succeeded";
-
-    private static string CloseReasonText(FindingCloseReason reason) => reason switch
-    {
-        FindingCloseReason.Recovered => "已恢复",
-        FindingCloseReason.RuleChanged => "判据变更",
-        _ => reason.ToString(),
-    };
-
-    private static string TriggerText(ChecklistTrigger trigger)
-        => trigger == ChecklistTrigger.Schedule ? "调度" : "手动";
-
-    private static string FrequencyText(ChecklistFrequency frequency) => frequency switch
-    {
-        ChecklistFrequency.Manual => "手动",
-        ChecklistFrequency.Hourly => "每小时",
-        ChecklistFrequency.Daily => "每天",
-        _ => frequency.ToString(),
-    };
-
-    private static string RunbookKindText(RunbookKind kind)
-        => kind == RunbookKind.General ? "通用" : "专用";
-
     private static string AgentRoleText(AgentRole? role) => role switch
     {
         null => "-",
@@ -897,27 +1108,4 @@ else
         ComparisonOperator.NotContains => "不包含",
         _ => op.ToString(),
     };
-
-    private static string NameOrMissing(string? name)
-        => string.IsNullOrWhiteSpace(name) ? "(已归档/已删除)" : name;
-
-    private static string OrDash(string? value)
-        => string.IsNullOrWhiteSpace(value) ? "-" : value;
-
-    private static string FormatDuration(long milliseconds) => milliseconds switch
-    {
-        <= 0 => "-",
-        < 1000 => $"{milliseconds} ms",
-        _ => $"{milliseconds / 1000d:0.0} s",
-    };
-
-    private static string Shorten(string? value, int maxLength)
-    {
-        if (string.IsNullOrEmpty(value))
-        {
-            return "-";
-        }
-
-        return value.Length <= maxLength ? value : value[..maxLength] + "…";
-    }
 }

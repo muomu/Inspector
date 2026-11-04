@@ -1,317 +1,487 @@
 @page "/settings"
+@layout DesignLayout
 @rendermode InteractiveServer
 @inject IManagementService Management
+@inject WorkspaceContextService Workspace
+@inject NavigationManager Nav
 
 <PageTitle>设置 · Growth Inspector</PageTitle>
 
-<h1>设置</h1>
-<p class="page-subtitle">
+<header class="page-head">
+    <div class="page-head__main">
+        <p class="kicker">设置 · Settings</p>
+        <h1 class="page-title">设置</h1>
+        <p class="page-meta">
+            <span>@projects.Count 个项目</span>
+            <span>@environments.Count 个环境</span>
+            <span>@mcpServers.Count 个 MCP server</span>
+        </p>
+    </div>
+    <div class="page-head__actions">
+        <a class="btn btn--quiet" href="@SystemsHref">体系</a>
+    </div>
+</header>
+
+<p class="page-lede">
     项目 / 环境 / MCP server 管理：写操作统一走管理 service；凭据只写不读，
     Lark webhook、启动命令、参数与 URL 在列表和编辑框里只显示掩码，保持掩码或留空即不修改。
 </p>
 
 @if (statusMessage is not null)
 {
-    <p class="muted">@statusMessage</p>
+    <p class="alert-line" role="alert"><strong>操作结果</strong><span>@statusMessage</span></p>
 }
 
-<div class="panel">
-    <h2>项目</h2>
-    @if (projects.Count == 0)
-    {
-        <p class="muted">还没有项目，先创建一个。</p>
-    }
-    else
-    {
-        <table class="data">
-            <thead>
-                <tr>
-                    <th>名称</th>
-                    <th>标识</th>
-                    <th>Lark webhook</th>
-                    <th>状态</th>
-                    <th></th>
-                </tr>
-            </thead>
-            <tbody>
-                @foreach (var project in projects)
-                {
-                    <tr>
-                        <td>@project.Name</td>
-                        <td>@(project.Code ?? "-")</td>
-                        <td>@(string.IsNullOrWhiteSpace(project.LarkWebhookUrl) ? "未配置" : project.LarkWebhookUrl)</td>
-                        <td><span class="badge">@(project.IsArchived ? "已归档" : "启用")</span></td>
-                        <td class="actions">
-                            <button @onclick="() => BeginEditProject(project)">编辑</button>
-                            <button @onclick="() => ToggleProjectArchivedAsync(project)">
-                                @(project.IsArchived ? "取消归档" : "归档")
-                            </button>
-                        </td>
-                    </tr>
-                }
-            </tbody>
-        </table>
-    }
-
-    <h3 style="margin-top:20px;">新建项目</h3>
-    <div class="form-row">
-        <label>名称<input @bind="projectName" placeholder="如：Growth" /></label>
-        <label>标识<input @bind="projectCode" placeholder="如：growth" /></label>
-        <label>Lark webhook<input @bind="projectWebhook" placeholder="https://open.larksuite.com/..." /></label>
+<section class="section" aria-labelledby="s-projects">
+    <div class="section__head">
+        <span class="section__index">§ 01</span>
+        <h2 class="section__title" id="s-projects">项目</h2>
+        <span class="section__meta">@projects.Count 个项目 · 已归档 @ArchivedProjectCount 个</span>
     </div>
-    <div class="form-col">
-        <label>项目级运维上下文（Markdown，会随手册交给 agent）<textarea rows="3" @bind="projectOpsContext"></textarea></label>
+    <div class="section__body">
+        @if (projects.Count == 0)
+        {
+            <div class="empty">
+                <span class="empty__glyph" aria-hidden="true">◇</span>
+                <h3 class="empty__title">还没有项目</h3>
+                <p class="empty__copy">先在下方创建第一个项目，再为它添加环境与 MCP server。</p>
+            </div>
+        }
+        else
+        {
+            <div class="table-wrap" role="region" aria-label="项目列表" tabindex="0">
+                <table class="table">
+                    <caption class="sr-only">项目名称、标识、Lark webhook、归档状态与操作</caption>
+                    <thead>
+                        <tr>
+                            <th scope="col">名称</th>
+                            <th scope="col">标识</th>
+                            <th scope="col">Lark webhook</th>
+                            <th scope="col">状态</th>
+                            <th scope="col"><span class="sr-only">操作</span></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var project in projects)
+                        {
+                            <tr>
+                                <td class="table__title">@project.Name</td>
+                                <td class="mono">@DisplayText.OrDash(project.Code)</td>
+                                <td>@(string.IsNullOrWhiteSpace(project.LarkWebhookUrl) ? "未配置" : project.LarkWebhookUrl)</td>
+                                <td>
+                                    @if (project.IsArchived)
+                                    {
+                                        <span class="chip">已归档</span>
+                                    }
+                                    else
+                                    {
+                                        <span class="chip chip--ok">启用</span>
+                                    }
+                                </td>
+                                <td class="actions">
+                                    <button class="btn btn--quiet" @onclick="() => BeginEditProject(project)">编辑</button>
+                                    <button class="btn btn--quiet" @onclick="() => ToggleProjectArchivedAsync(project)">
+                                        @(project.IsArchived ? "取消归档" : "归档")
+                                    </button>
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        }
+
+        <div class="panel">
+            <h3 class="panel__title">新建项目</h3>
+            <p class="panel__copy">项目是环境、检查单与 MCP server 的归属；Lark webhook 只写不读，列表与编辑框显示掩码。</p>
+            <div class="form-row">
+                <label class="field">
+                    <span class="field__label">名称</span>
+                    <input class="input" @bind="projectName" placeholder="如：Growth" />
+                </label>
+                <label class="field">
+                    <span class="field__label">标识</span>
+                    <input class="input" @bind="projectCode" placeholder="如：growth" />
+                </label>
+                <label class="field field--wide">
+                    <span class="field__label">Lark webhook</span>
+                    <input class="input" @bind="projectWebhook" placeholder="https://open.larksuite.com/..." />
+                </label>
+                <label class="field field--wide">
+                    <span class="field__label">项目级运维上下文（Markdown，会随手册交给 agent）</span>
+                    <textarea class="textarea" rows="3" @bind="projectOpsContext"></textarea>
+                </label>
+            </div>
+            <div class="actions">
+                <button class="btn btn--primary" @onclick="CreateProjectAsync">创建项目</button>
+            </div>
+        </div>
+
+        @if (editingProjectId != Guid.Empty)
+        {
+            <div class="panel">
+                <h3 class="panel__title">编辑项目</h3>
+                <div class="form-row">
+                    <label class="field">
+                        <span class="field__label">名称</span>
+                        <input class="input" @bind="editProjectName" />
+                    </label>
+                    <label class="field">
+                        <span class="field__label">标识</span>
+                        <input class="input" @bind="editProjectCode" />
+                    </label>
+                    <label class="field field--wide">
+                        <span class="field__label">Lark webhook</span>
+                        <input class="input" @bind="editProjectWebhook" placeholder="保持掩码或留空表示不修改" />
+                    </label>
+                    <label class="field field--wide">
+                        <span class="field__label">项目级运维上下文</span>
+                        <textarea class="textarea" rows="3" @bind="editProjectOpsContext"></textarea>
+                    </label>
+                </div>
+                <div class="actions">
+                    <button class="btn btn--primary" @onclick="SaveProjectAsync">保存</button>
+                    <button class="btn" @onclick="CancelEditProject">取消</button>
+                </div>
+            </div>
+        }
     </div>
-    <div class="form-row">
-        <button class="primary" @onclick="CreateProjectAsync">创建项目</button>
+</section>
+
+<section class="section" aria-labelledby="s-environments">
+    <div class="section__head">
+        <span class="section__index">§ 02</span>
+        <h2 class="section__title" id="s-environments">环境</h2>
+        <span class="section__meta">@environments.Count 个环境 · 默认 @DefaultEnvironmentCount 个</span>
     </div>
-</div>
+    <div class="section__body">
+        @if (environments.Count == 0)
+        {
+            <div class="empty">
+                <span class="empty__glyph" aria-hidden="true">◇</span>
+                <h3 class="empty__title">还没有环境</h3>
+                <p class="empty__copy">环境是执行与异常的最小作用域；先在下方为项目创建环境。</p>
+            </div>
+        }
+        else
+        {
+            <div class="table-wrap" role="region" aria-label="环境列表" tabindex="0">
+                <table class="table">
+                    <caption class="sr-only">环境所属项目、名称、默认标记、归档状态与操作</caption>
+                    <thead>
+                        <tr>
+                            <th scope="col">项目</th>
+                            <th scope="col">名称</th>
+                            <th scope="col">默认</th>
+                            <th scope="col">状态</th>
+                            <th scope="col"><span class="sr-only">操作</span></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var environment in environments)
+                        {
+                            <tr>
+                                <td>@environment.ProjectName</td>
+                                <td class="table__title">@environment.Name</td>
+                                <td>@(environment.IsDefault ? "是" : "否")</td>
+                                <td>
+                                    @if (environment.IsArchived)
+                                    {
+                                        <span class="chip">已归档</span>
+                                    }
+                                    else
+                                    {
+                                        <span class="chip chip--ok">启用</span>
+                                    }
+                                </td>
+                                <td class="actions">
+                                    <button class="btn btn--quiet" @onclick="() => BeginEditEnvironment(environment)">编辑</button>
+                                    <button class="btn btn--quiet" @onclick="() => ToggleEnvironmentArchivedAsync(environment)">
+                                        @(environment.IsArchived ? "取消归档" : "归档")
+                                    </button>
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        }
 
-@if (editingProjectId != Guid.Empty)
-{
-    <div class="panel">
-        <h2>编辑项目</h2>
-        <div class="form-row">
-            <label>名称<input @bind="editProjectName" /></label>
-            <label>标识<input @bind="editProjectCode" /></label>
-            <label>Lark webhook<input @bind="editProjectWebhook" placeholder="保持掩码或留空表示不修改" /></label>
-        </div>
-        <div class="form-col">
-            <label>项目级运维上下文<textarea rows="3" @bind="editProjectOpsContext"></textarea></label>
-        </div>
-        <div class="form-row">
-            <button class="primary" @onclick="SaveProjectAsync">保存</button>
-            <button @onclick="CancelEditProject">取消</button>
-        </div>
-    </div>
-}
-
-<div class="panel">
-    <h2>环境</h2>
-    @if (environments.Count == 0)
-    {
-        <p class="muted">还没有环境。</p>
-    }
-    else
-    {
-        <table class="data">
-            <thead>
-                <tr>
-                    <th>项目</th>
-                    <th>名称</th>
-                    <th>默认</th>
-                    <th>状态</th>
-                    <th></th>
-                </tr>
-            </thead>
-            <tbody>
-                @foreach (var environment in environments)
-                {
-                    <tr>
-                        <td>@environment.ProjectName</td>
-                        <td>@environment.Name</td>
-                        <td>@(environment.IsDefault ? "是" : "否")</td>
-                        <td><span class="badge">@(environment.IsArchived ? "已归档" : "启用")</span></td>
-                        <td class="actions">
-                            <button @onclick="() => BeginEditEnvironment(environment)">编辑</button>
-                            <button @onclick="() => ToggleEnvironmentArchivedAsync(environment)">
-                                @(environment.IsArchived ? "取消归档" : "归档")
-                            </button>
-                        </td>
-                    </tr>
-                }
-            </tbody>
-        </table>
-    }
-
-    <h3 style="margin-top:20px;">新建环境</h3>
-    @if (projects.Count == 0)
-    {
-        <p class="muted">请先创建项目。</p>
-    }
-    else
-    {
-        <div class="form-row">
-            <label>
-                项目
-                <select @bind="environmentProjectId">
-                    <option value="">请选择项目</option>
-                    @foreach (var project in projects)
-                    {
-                        <option value="@project.Id">@project.Name</option>
-                    }
-                </select>
-            </label>
-            <label>名称<input @bind="environmentName" placeholder="如：prod / beta" /></label>
-            <label class="checkbox-line"><input type="checkbox" @bind="environmentIsDefault" /> 设为默认环境</label>
-            <button class="primary" @onclick="CreateEnvironmentAsync">创建环境</button>
-        </div>
-    }
-</div>
-
-@if (editingEnvironmentId != Guid.Empty)
-{
-    <div class="panel">
-        <h2>编辑环境</h2>
-        <div class="form-row">
-            <label>名称<input @bind="editEnvironmentName" /></label>
-            <label class="checkbox-line">
-                <input type="checkbox" @bind="editEnvironmentIsDefault" /> 设为默认环境
-            </label>
-            <button class="primary" @onclick="SaveEnvironmentAsync">保存</button>
-            <button @onclick="CancelEditEnvironment">取消</button>
-        </div>
-    </div>
-}
-
-<div class="panel">
-    <h2>MCP server</h2>
-    <p class="muted">MCP 是唯一数据源接入方式；新增数据源 = 登记一个 server（v1 只要求 mock MCP server 可跑通）。</p>
-    @if (mcpServers.Count == 0)
-    {
-        <p class="muted">还没有登记 MCP server。</p>
-    }
-    else
-    {
-        <table class="data">
-            <thead>
-                <tr>
-                    <th>项目</th>
-                    <th>名称</th>
-                    <th>传输</th>
-                    <th>环境</th>
-                    <th>命令 / URL</th>
-                    <th>启用</th>
-                    <th>状态</th>
-                    <th></th>
-                </tr>
-            </thead>
-            <tbody>
-                @foreach (var server in mcpServers)
-                {
-                    <tr>
-                        <td>@ProjectName(server.ProjectId)</td>
-                        <td>@server.Name</td>
-                        <td>@(server.Transport == McpTransport.Http ? "HTTP" : "stdio")</td>
-                        <td>@(server.EnvironmentName ?? "全部环境")</td>
-                        <td>@(server.Transport == McpTransport.Http ? server.Url : server.Command)</td>
-                        <td>@(server.IsEnabled ? "是" : "否")</td>
-                        <td><span class="badge">@(server.IsArchived ? "已归档" : "启用")</span></td>
-                        <td class="actions">
-                            <button @onclick="() => BeginEditMcpServer(server)">编辑</button>
-                            <button @onclick="() => ToggleMcpServerArchivedAsync(server)">
-                                @(server.IsArchived ? "取消归档" : "归档")
-                            </button>
-                        </td>
-                    </tr>
-                }
-            </tbody>
-        </table>
-    }
-
-    <h3 style="margin-top:20px;">登记 MCP server</h3>
-    @if (projects.Count == 0)
-    {
-        <p class="muted">请先创建项目。</p>
-    }
-    else
-    {
-        <div class="form-row">
-            <label>
-                项目
-                <select @bind="mcpProjectId">
-                    <option value="">请选择项目</option>
-                    @foreach (var project in projects)
-                    {
-                        <option value="@project.Id">@project.Name</option>
-                    }
-                </select>
-            </label>
-            <label>名称<input @bind="mcpName" placeholder="如：mock-metrics" /></label>
-            <label>
-                传输
-                <select @bind="mcpTransportText">
-                    <option value="Stdio">stdio（本地子进程）</option>
-                    <option value="Http">HTTP</option>
-                </select>
-            </label>
-            <label>
-                绑定环境
-                <select @bind="mcpEnvironmentId">
-                    <option value="">全部环境</option>
-                    @foreach (var environment in EnvironmentsOf(mcpProjectId))
-                    {
-                        <option value="@environment.Id">@environment.Name</option>
-                    }
-                </select>
-            </label>
-        </div>
-        <div class="form-row">
-            @if (mcpTransportText == "Http")
+        <div class="panel">
+            <h3 class="panel__title">新建环境</h3>
+            @if (projects.Count == 0)
             {
-                <label style="flex:1;">URL<input @bind="mcpUrl" placeholder="https://..." /></label>
+                <p class="panel__copy">请先创建项目。</p>
             }
             else
             {
-                <label style="flex:1;">启动命令<input @bind="mcpCommand" placeholder="dotnet / python / node ..." /></label>
-                <label style="flex:1;">参数（JSON 数组）<input @bind="mcpArgumentsJson" placeholder="[&quot;run&quot;,&quot;--project&quot;,&quot;...&quot;]" /></label>
+                <p class="panel__copy">环境是执行与异常的最小作用域；默认环境用于顶栏未指定时的回退。</p>
+                <div class="form-row">
+                    <label class="field">
+                        <span class="field__label">项目</span>
+                        <select class="select" @bind="environmentProjectId">
+                            <option value="">请选择项目</option>
+                            @foreach (var project in projects)
+                            {
+                                <option value="@project.Id">@project.Name</option>
+                            }
+                        </select>
+                    </label>
+                    <label class="field">
+                        <span class="field__label">名称</span>
+                        <input class="input" @bind="environmentName" placeholder="如：prod / beta" />
+                    </label>
+                </div>
+                <div class="actions">
+                    <label class="checkbox-line">
+                        <input type="checkbox" @bind="environmentIsDefault" /> 设为默认环境
+                    </label>
+                    <button class="btn btn--primary" @onclick="CreateEnvironmentAsync">创建环境</button>
+                </div>
             }
         </div>
-        <div class="form-row">
-            <label>超时（秒）<input type="number" @bind="mcpTimeoutSeconds" /></label>
-            <label>结果截断（字节）<input type="number" @bind="mcpMaxResultBytes" /></label>
-            <label class="checkbox-line"><input type="checkbox" @bind="mcpIsEnabled" /> 启用</label>
-            <button class="primary" @onclick="CreateMcpServerAsync">登记</button>
-        </div>
-    }
-</div>
 
-@if (editingMcpServerId != Guid.Empty)
-{
-    <div class="panel">
-        <h2>编辑 MCP server</h2>
-        <div class="form-row">
-            <label>名称<input @bind="editMcpName" /></label>
-            <label>
-                传输
-                <select @bind="editMcpTransportText">
-                    <option value="Stdio">stdio（本地子进程）</option>
-                    <option value="Http">HTTP</option>
-                </select>
-            </label>
-            <label>
-                绑定环境
-                <select @bind="editMcpEnvironmentId">
-                    <option value="">全部环境</option>
-                    @foreach (var environment in EnvironmentsOf(editMcpProjectId))
-                    {
-                        <option value="@environment.Id">@environment.Name</option>
-                    }
-                </select>
-            </label>
-        </div>
-        <div class="form-row">
-            @if (editMcpTransportText == "Http")
+        @if (editingEnvironmentId != Guid.Empty)
+        {
+            <div class="panel">
+                <h3 class="panel__title">编辑环境</h3>
+                <div class="form-row">
+                    <label class="field">
+                        <span class="field__label">名称</span>
+                        <input class="input" @bind="editEnvironmentName" />
+                    </label>
+                </div>
+                <div class="actions">
+                    <label class="checkbox-line">
+                        <input type="checkbox" @bind="editEnvironmentIsDefault" /> 设为默认环境
+                    </label>
+                    <button class="btn btn--primary" @onclick="SaveEnvironmentAsync">保存</button>
+                    <button class="btn" @onclick="CancelEditEnvironment">取消</button>
+                </div>
+            </div>
+        }
+    </div>
+</section>
+
+<section class="section" aria-labelledby="s-mcp">
+    <div class="section__head">
+        <span class="section__index">§ 03</span>
+        <h2 class="section__title" id="s-mcp">MCP server</h2>
+        <span class="section__meta">@mcpServers.Count 个登记 · 启用 @EnabledMcpCount 个</span>
+    </div>
+    <div class="section__body">
+        @if (mcpServers.Count == 0)
+        {
+            <div class="empty">
+                <span class="empty__glyph" aria-hidden="true">◇</span>
+                <h3 class="empty__title">还没有登记 MCP server</h3>
+                <p class="empty__copy">MCP 是唯一数据源接入方式；先在下方登记一个 server。</p>
+            </div>
+        }
+        else
+        {
+            <div class="table-wrap" role="region" aria-label="MCP server 列表" tabindex="0">
+                <table class="table table--wide">
+                    <caption class="sr-only">MCP server 所属项目、名称、传输方式、绑定环境、命令或 URL、启用与归档状态</caption>
+                    <thead>
+                        <tr>
+                            <th scope="col">项目</th>
+                            <th scope="col">名称</th>
+                            <th scope="col">传输</th>
+                            <th scope="col">环境</th>
+                            <th scope="col">命令 / URL</th>
+                            <th scope="col">启用</th>
+                            <th scope="col">状态</th>
+                            <th scope="col"><span class="sr-only">操作</span></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var server in mcpServers)
+                        {
+                            var endpoint = server.Transport == McpTransport.Http ? server.Url : server.Command;
+                            <tr>
+                                <td>@ProjectName(server.ProjectId)</td>
+                                <td class="table__title">@server.Name</td>
+                                <td>@(server.Transport == McpTransport.Http ? "HTTP" : "stdio")</td>
+                                <td>@(server.EnvironmentName ?? "全部环境")</td>
+                                <td>
+                                    <span class="cell-clip mono" title="@DisplayText.OrDash(endpoint)">@DisplayText.OrDash(endpoint)</span>
+                                </td>
+                                <td>@(server.IsEnabled ? "是" : "否")</td>
+                                <td>
+                                    @if (server.IsArchived)
+                                    {
+                                        <span class="chip">已归档</span>
+                                    }
+                                    else if (server.IsEnabled)
+                                    {
+                                        <span class="chip chip--ok">启用</span>
+                                    }
+                                    else
+                                    {
+                                        <span class="chip">停用</span>
+                                    }
+                                </td>
+                                <td class="actions">
+                                    <button class="btn btn--quiet" @onclick="() => BeginEditMcpServer(server)">编辑</button>
+                                    <button class="btn btn--quiet" @onclick="() => ToggleMcpServerArchivedAsync(server)">
+                                        @(server.IsArchived ? "取消归档" : "归档")
+                                    </button>
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        }
+
+        <div class="panel">
+            <h3 class="panel__title">登记 MCP server</h3>
+            <p class="panel__copy">
+                MCP 是唯一数据源接入方式；新增数据源 = 登记一个 server（v1 只要求 mock MCP server 可跑通）。
+                命令、参数与 URL 只写不读，列表与编辑框显示掩码。
+            </p>
+            @if (projects.Count == 0)
             {
-                <label style="flex:1;">URL<input @bind="editMcpUrl" placeholder="保持掩码或留空表示不修改" /></label>
+                <p class="panel__copy">请先创建项目。</p>
             }
             else
             {
-                <label style="flex:1;">启动命令<input @bind="editMcpCommand" placeholder="保持掩码或留空表示不修改" /></label>
-                <label style="flex:1;">参数（JSON 数组）<input @bind="editMcpArgumentsJson" placeholder="保持掩码或留空表示不修改" /></label>
+                <div class="form-row">
+                    <label class="field">
+                        <span class="field__label">项目</span>
+                        <select class="select" @bind="mcpProjectId">
+                            <option value="">请选择项目</option>
+                            @foreach (var project in projects)
+                            {
+                                <option value="@project.Id">@project.Name</option>
+                            }
+                        </select>
+                    </label>
+                    <label class="field">
+                        <span class="field__label">名称</span>
+                        <input class="input" @bind="mcpName" placeholder="如：mock-metrics" />
+                    </label>
+                    <label class="field">
+                        <span class="field__label">传输</span>
+                        <select class="select" @bind="mcpTransportText">
+                            <option value="Stdio">stdio（本地子进程）</option>
+                            <option value="Http">HTTP</option>
+                        </select>
+                    </label>
+                    <label class="field">
+                        <span class="field__label">绑定环境</span>
+                        <select class="select" @bind="mcpEnvironmentId">
+                            <option value="">全部环境</option>
+                            @foreach (var environment in EnvironmentsOf(mcpProjectId))
+                            {
+                                <option value="@environment.Id">@environment.Name</option>
+                            }
+                        </select>
+                    </label>
+                    @if (mcpTransportText == "Http")
+                    {
+                        <label class="field field--wide">
+                            <span class="field__label">URL</span>
+                            <input class="input" @bind="mcpUrl" placeholder="https://..." />
+                        </label>
+                    }
+                    else
+                    {
+                        <label class="field field--wide">
+                            <span class="field__label">启动命令</span>
+                            <input class="input" @bind="mcpCommand" placeholder="dotnet / python / node ..." />
+                        </label>
+                        <label class="field field--wide">
+                            <span class="field__label">参数（JSON 数组）</span>
+                            <input class="input" @bind="mcpArgumentsJson" placeholder="@("['run','--project','...']")" />
+                        </label>
+                    }
+                    <label class="field">
+                        <span class="field__label">超时（秒）</span>
+                        <input class="input" type="number" @bind="mcpTimeoutSeconds" />
+                    </label>
+                    <label class="field">
+                        <span class="field__label">结果截断（字节）</span>
+                        <input class="input" type="number" @bind="mcpMaxResultBytes" />
+                    </label>
+                </div>
+                <div class="actions">
+                    <label class="checkbox-line">
+                        <input type="checkbox" @bind="mcpIsEnabled" /> 启用
+                    </label>
+                    <button class="btn btn--primary" @onclick="CreateMcpServerAsync">登记</button>
+                </div>
             }
         </div>
-        <div class="form-row">
-            <label>超时（秒）<input type="number" @bind="editMcpTimeoutSeconds" /></label>
-            <label>结果截断（字节）<input type="number" @bind="editMcpMaxResultBytes" /></label>
-            <label class="checkbox-line"><input type="checkbox" @bind="editMcpIsEnabled" /> 启用</label>
-            <button class="primary" @onclick="SaveMcpServerAsync">保存</button>
-            <button @onclick="CancelEditMcpServer">取消</button>
-        </div>
+
+        @if (editingMcpServerId != Guid.Empty)
+        {
+            <div class="panel">
+                <h3 class="panel__title">编辑 MCP server</h3>
+                <div class="form-row">
+                    <label class="field">
+                        <span class="field__label">名称</span>
+                        <input class="input" @bind="editMcpName" />
+                    </label>
+                    <label class="field">
+                        <span class="field__label">传输</span>
+                        <select class="select" @bind="editMcpTransportText">
+                            <option value="Stdio">stdio（本地子进程）</option>
+                            <option value="Http">HTTP</option>
+                        </select>
+                    </label>
+                    <label class="field">
+                        <span class="field__label">绑定环境</span>
+                        <select class="select" @bind="editMcpEnvironmentId">
+                            <option value="">全部环境</option>
+                            @foreach (var environment in EnvironmentsOf(editMcpProjectId))
+                            {
+                                <option value="@environment.Id">@environment.Name</option>
+                            }
+                        </select>
+                    </label>
+                    @if (editMcpTransportText == "Http")
+                    {
+                        <label class="field field--wide">
+                            <span class="field__label">URL</span>
+                            <input class="input" @bind="editMcpUrl" placeholder="保持掩码或留空表示不修改" />
+                        </label>
+                    }
+                    else
+                    {
+                        <label class="field field--wide">
+                            <span class="field__label">启动命令</span>
+                            <input class="input" @bind="editMcpCommand" placeholder="保持掩码或留空表示不修改" />
+                        </label>
+                        <label class="field field--wide">
+                            <span class="field__label">参数（JSON 数组）</span>
+                            <input class="input" @bind="editMcpArgumentsJson" placeholder="保持掩码或留空表示不修改" />
+                        </label>
+                    }
+                    <label class="field">
+                        <span class="field__label">超时（秒）</span>
+                        <input class="input" type="number" @bind="editMcpTimeoutSeconds" />
+                    </label>
+                    <label class="field">
+                        <span class="field__label">结果截断（字节）</span>
+                        <input class="input" type="number" @bind="editMcpMaxResultBytes" />
+                    </label>
+                </div>
+                <div class="actions">
+                    <label class="checkbox-line">
+                        <input type="checkbox" @bind="editMcpIsEnabled" /> 启用
+                    </label>
+                    <button class="btn btn--primary" @onclick="SaveMcpServerAsync">保存</button>
+                    <button class="btn" @onclick="CancelEditMcpServer">取消</button>
+                </div>
+            </div>
+        }
     </div>
-}
+</section>
 
 @code {
+    private WorkspaceContext workspace = WorkspaceContext.Empty;
     private List<ProjectView> projects = [];
     private List<EnvironmentView> environments = [];
     private List<McpServerView> mcpServers = [];
@@ -359,8 +529,24 @@
     private int editMcpMaxResultBytes = 8192;
     private bool editMcpIsEnabled = true;
 
+    private string ContextQuery => workspace.QuerySuffix;
+    private string SystemsHref => $"/systems{ContextQuery}";
+
+    private int ArchivedProjectCount => projects.Count(x => x.IsArchived);
+    private int DefaultEnvironmentCount => environments.Count(x => x.IsDefault && !x.IsArchived);
+    private int EnabledMcpCount => mcpServers.Count(x => x.IsEnabled && !x.IsArchived);
+
     protected override async Task OnInitializedAsync()
     {
+        try
+        {
+            workspace = await Workspace.ResolveAsync(WorkspaceContextService.ReadQueryValue(Nav));
+        }
+        catch (Exception ex)
+        {
+            statusMessage = $"上下文解析失败：{ex.Message}";
+        }
+
         await ReloadAsync();
     }
 
@@ -375,6 +561,10 @@
         catch (ManagementException ex)
         {
             statusMessage = ex.Message;
+        }
+        catch (Exception ex)
+        {
+            statusMessage = $"加载失败：{ex.Message}";
         }
     }
 
@@ -591,7 +781,7 @@
         => environments.Where(x => x.ProjectId == projectId && !x.IsArchived);
 
     private string ProjectName(Guid projectId)
-        => projects.FirstOrDefault(x => x.Id == projectId)?.Name ?? "-";
+        => DisplayText.NameOrMissing(projects.FirstOrDefault(x => x.Id == projectId)?.Name);
 
     private async Task ExecuteAsync(Func<Task> action)
     {

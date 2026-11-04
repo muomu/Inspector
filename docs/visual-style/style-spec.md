@@ -344,14 +344,16 @@
 
 ---
 
-## 10. 验收清单（全站迁移完成后逐项复检；`/` 与 `/styleguide` 已过）
+## 10. 验收清单（全站迁移已完成，2026-11-04 复检）
 
-- [ ] `/styleguide` 展示浅/深两套色板、字体、五态、表格、表单、空态、证据块；每个软底配对显示对比度。
-- [ ] 1440 / 1280 / 1024 / 390 截图；浅色与深色都无页面横向溢出（表格内部滚动除外）。
-- [ ] 200% 缩放不丢内容；键盘可走完筛选、表格滚动、证据展开、主题切换。
-- [ ] 全站 `lang="zh-CN"`；`th` 全带 `scope`；无 `outline:none`。
-- [ ] 页面/组件里没有硬编码 hex；颜色只从 token 取。
-- [ ] RunStatus 不再显示“成功”；Error 不再用朱红；信息型不显示“待证”。
-- [ ] `StatusPresenter` 单元测试覆盖 6 个枚举；无跨页复制 switch。
-- [ ] 打印样式：隐藏导航/操作/切换条，正文黑白可读。
-- [ ] `dotnet build` 0 warning / 0 error；无新增前端依赖。
+- [x] `/styleguide` 展示浅/深两套色板、字体、五态、表格、表单、空态、证据块；每个软底配对显示对比度。
+- [x] 1440 / 1280 / 1024 / 390 截图；浅色与深色都无页面横向溢出（表格内部滚动除外）。
+      14 条路由 × 4 个宽度共 56 组实测 `documentElement.scrollWidth - clientWidth = 0`；宽表只在 `.table-wrap` 内滚动。
+- [x] 200% 缩放不丢内容（1440 屏 → 720 CSS px 等价验证：findings / 执行详情 / settings 溢出均为 0）；
+      键盘可走完跳过链接 → 导航 → 筛选 → 表格滚动区 → 证据展开 → 主题切换（`details` 与 `.table-wrap[tabindex]` 可聚焦）。
+- [x] 全站 `lang="zh-CN"`；`th` 全带 `scope`；无 `outline:none`（唯一例外是 `h1:focus`，避免 FocusOnNavigate 在标题上画框）。
+- [x] 页面/组件里没有硬编码 hex；颜色只从 token 取（`/styleguide` 的色板样张与打印样式除外）。
+- [x] RunStatus 不再显示“成功”；`Error` 用 `--muted`（待证）不用朱红；信息型不显示“待证”（`StatusPresenter` + 单测锁定）。
+- [x] `StatusPresenter` 单元测试覆盖 6 个枚举；无跨页复制 switch（`DisplayText` / `RunVerdictBuilder` 收敛文案与计数）。
+- [x] 打印样式：隐藏导航 / 页脚 / 工具栏 / 操作，正文黑白可读（打印媒体实测 `masthead`、`footer`、`toolbar` 均 `display:none`，`body` 背景为白）。
+- [x] `dotnet build` 0 warning / 0 error；无新增前端依赖；`dotnet test` 186 passed。

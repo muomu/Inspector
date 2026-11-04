@@ -29,7 +29,7 @@ public sealed class ClusterOverviewBuilderTests
         Assert.Equal(2, overview.OkCount);
         Assert.Equal(1, overview.PendingCount);
         Assert.False(overview.AllExpectedResultsPresent);
-        var missing = Assert.Single(overview.Services.Where(node => node.Name == "service-b"));
+        var missing = Assert.Single(overview.Services, node => node.Name == "service-b");
         Assert.Equal(StatusState.Pending, missing.Status.State);
         Assert.Equal("无结果", missing.Status.Sub);
         Assert.Equal("待证 · 无结果", missing.Meta);
