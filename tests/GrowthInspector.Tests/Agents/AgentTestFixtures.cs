@@ -237,3 +237,63 @@ public sealed class FakeRunbookWriteService : IRunbookWriteService
 
     public sealed record WriteCall(Guid RunbookId, string? Section, string Content);
 }
+
+/// <summary>按脚本返回 ChatResponse 的假模型；也可用 Handler 模拟超时或异常。</summary>
+public sealed class ScriptedChatClient : IChatClient
+{
+    private readonly Queue<ChatResponse> script = new();
+
+    public Func<IReadOnlyList<ChatMessage>, ChatOptions?, CancellationToken, Task<ChatResponse>>? Handler { get; set; }
+
+    public List<IReadOnlyList<ChatMessage>> Requests { get; } = [];
+
+    public List<ChatOptions?> ReceivedOptions { get; } = [];
+
+    public ScriptedChatClient Enqueue(ChatResponse response)
+    {
+        script.Enqueue(response);
+        return this;
+    }
+
+    public Task<ChatResponse> GetResponseAsync(
+        IEnumerable<ChatMessage> messages,
+        ChatOptions? options = null,
+        CancellationToken cancellationToken = default)
+    {
+        var snapshot = messages.ToList();
+        Requests.Add(snapshot);
+        ReceivedOptions.Add(options);
+
+        if (Handler is not null)
+        {
+            return Handler(snapshot, options, cancellationToken);
+        }
+
+        if (script.Count == 0)
+        {
+            throw new InvalidOperationException("测试脚本已用尽。");
+        }
+
+        return Task.FromResult(script.Dequeue());
+    }
+
+    public IAsyncEnumerable<ChatResponseUpdate> GetStreamingResponseAsync(
+        IEnumerable<ChatMessage> messages,
+        ChatOptions? options = null,
+        CancellationToken cancellationToken = default)
+        => throw new NotSupportedException("执行 agent 只使用非流式调用。");
+
+    public object? GetService(Type serviceType, object? serviceKey = null) => null;
+
+    public void Dispose()
+    {
+    }
+
+    public static ChatResponse Text(string text)
+        => new(new ChatMessage(ChatRole.Assistant, text));
+
+    public static ChatResponse FunctionCalls(params FunctionCallContent[] calls)
+        => new(new ChatMessage(
+            ChatRole.Assistant,
+            calls.Cast<AIContent>().ToList()));
+}

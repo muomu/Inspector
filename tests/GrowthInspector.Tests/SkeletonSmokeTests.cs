@@ -111,7 +111,10 @@ public sealed class SkeletonSmokeTests : IDisposable
             .SingleAsync(x => x.Id == runId);
 
         Assert.Equal(2, run.Results.Count);
-        Assert.All(run.Results, result => Assert.Equal(CheckResultStatus.InsufficientEvidence, result.Status));
+
+        // 测试环境未配置 DEEPSEEK_API_KEY：执行 agent 走兜底，明确标记未完成 LLM 判定，不伪造结论。
+        Assert.All(run.Results, result => Assert.Equal(CheckResultStatus.Error, result.Status));
+        Assert.All(run.Results, result => Assert.Contains("未完成 LLM 判定", result.ErrorMessage));
 
         var snapshot = JsonSerializer.Deserialize<ChecklistSnapshot>(
             run.SnapshotJson,

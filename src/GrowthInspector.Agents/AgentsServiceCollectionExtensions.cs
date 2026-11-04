@@ -49,7 +49,7 @@ public static class AgentsServiceCollectionExtensions
             sp.GetRequiredService<IOptions<InspectionOptions>>(),
             sp.GetRequiredService<ILoggerFactory>()));
 
-        services.AddSingleton<IChecklistItemExecutor, StubChecklistItemExecutor>();
+        services.AddScoped<IChecklistItemExecutor, ChecklistItemAgentExecutor>();
         services.AddSingleton<IMcpToolInvoker, StubMcpToolInvoker>();
 
         return services;
