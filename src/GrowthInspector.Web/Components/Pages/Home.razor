@@ -21,7 +21,16 @@
     <div class="stat-card"><span>今日执行</span><strong>@todayRunCount</strong></div>
 </div>
 
-<h2 style="margin-top:28px;">最近执行</h2>
+<h2 class="section-title">今日执行状态</h2>
+<div class="stat-grid compact">
+    <div class="stat-card"><span>成功</span><strong>@todaySucceededCount</strong></div>
+    <div class="stat-card"><span>失败</span><strong>@todayFailedCount</strong></div>
+    <div class="stat-card"><span>Skipped</span><strong>@todaySkippedCount</strong></div>
+    <div class="stat-card"><span>Canceled</span><strong>@todayCanceledCount</strong></div>
+    <div class="stat-card"><span>等待中 / 执行中</span><strong>@todayActiveCount</strong></div>
+</div>
+
+<h2 class="section-title">最近执行</h2>
 @if (recentRuns.Count == 0)
 {
     <div class="empty">
@@ -31,31 +40,47 @@
 }
 else
 {
-    <table class="data">
-        <thead>
-            <tr>
-                <th>检查单</th>
-                <th>环境</th>
-                <th>状态</th>
-                <th>开始时间</th>
-                <th>耗时</th>
-                <th>Token</th>
-            </tr>
-        </thead>
-        <tbody>
-            @foreach (var run in recentRuns)
-            {
+    <div class="table-scroll">
+        <table class="data wide">
+            <thead>
                 <tr>
-                    <td><a href="/runs/@run.Id">@(run.Checklist?.Name ?? "(已删除)")</a></td>
-                    <td>@(run.Environment?.Name ?? "-")</td>
-                    <td><span class="badge">@run.Status</span></td>
-                    <td>@run.StartedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss")</td>
-                    <td>@run.DurationMs ms</td>
-                    <td>@(run.PromptTokens + run.CompletionTokens)</td>
+                    <th>检查单</th>
+                    <th>环境</th>
+                    <th>状态</th>
+                    <th>开始时间</th>
+                    <th>耗时</th>
+                    <th>Token</th>
+                    <th>触发方式</th>
                 </tr>
-            }
-        </tbody>
-    </table>
+            </thead>
+            <tbody>
+                @foreach (var run in recentRuns)
+                {
+                    <tr>
+                        <td>
+                            <a href="/runs/@run.Id">@NameOrMissing(run.Checklist?.Name)</a>
+                            @if (run.Checklist?.IsArchived == true)
+                            {
+                                <span class="badge archived">已归档</span>
+                            }
+                        </td>
+                        <td>
+                            @NameOrMissing(run.Environment?.Name)
+                            @if (run.Environment?.IsArchived == true)
+                            {
+                                <span class="badge archived">已归档</span>
+                            }
+                        </td>
+                        <td><span class="@StatusClass(run.Status)">@StatusText(run.Status)</span></td>
+                        <td class="narrow-num">@run.StartedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss")</td>
+                        <td class="narrow-num">@FormatDuration(run.DurationMs)</td>
+                        <td class="narrow-num">@(run.PromptTokens + run.CompletionTokens)</td>
+                        <td>@TriggerText(run.Trigger)</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
 }
 
 @code {
@@ -63,6 +88,11 @@ else
     private int checklistCount;
     private int openFindingCount;
     private int todayRunCount;
+    private int todaySucceededCount;
+    private int todayFailedCount;
+    private int todaySkippedCount;
+    private int todayCanceledCount;
+    private int todayActiveCount;
     private List<ChecklistRun> recentRuns = [];
     private string? loadError;
 
@@ -74,8 +104,20 @@ else
             projectCount = await db.Projects.CountAsync();
             checklistCount = await db.Checklists.CountAsync();
             openFindingCount = await db.Findings.CountAsync(x => x.Status == FindingStatus.Open);
-            var today = DateTimeOffset.Now.Date;
-            todayRunCount = await db.ChecklistRuns.CountAsync(x => x.StartedAt >= today);
+
+            var todayStart = LocalDayStart(DateOnly.FromDateTime(DateTime.Today));
+            var todayStatuses = await db.ChecklistRuns
+                .Where(x => x.StartedAt >= todayStart)
+                .Select(x => x.Status)
+                .ToListAsync();
+
+            todayRunCount = todayStatuses.Count;
+            todaySucceededCount = todayStatuses.Count(x => x == RunStatus.Succeeded);
+            todayFailedCount = todayStatuses.Count(x => x == RunStatus.Failed);
+            todaySkippedCount = todayStatuses.Count(x => x == RunStatus.Skipped);
+            todayCanceledCount = todayStatuses.Count(x => x == RunStatus.Canceled);
+            todayActiveCount = todayStatuses.Count(x => x is RunStatus.Pending or RunStatus.Running);
+
             recentRuns = await db.ChecklistRuns
                 .Include(x => x.Checklist)
                 .Include(x => x.Environment)
@@ -89,4 +131,45 @@ else
             loadError = ex.Message;
         }
     }
+
+    private static DateTimeOffset LocalDayStart(DateOnly date)
+    {
+        var local = date.ToDateTime(TimeOnly.MinValue);
+        return new DateTimeOffset(local, TimeZoneInfo.Local.GetUtcOffset(local));
+    }
+
+    private static string NameOrMissing(string? name)
+        => string.IsNullOrWhiteSpace(name) ? "(已归档/已删除)" : name;
+
+    private static string StatusText(RunStatus status) => status switch
+    {
+        RunStatus.Pending => "等待中",
+        RunStatus.Running => "执行中",
+        RunStatus.Succeeded => "成功",
+        RunStatus.Failed => "失败",
+        RunStatus.Canceled => "已取消",
+        RunStatus.Skipped => "已跳过",
+        _ => status.ToString(),
+    };
+
+    private static string StatusClass(RunStatus status) => status switch
+    {
+        RunStatus.Pending => "badge status-pending",
+        RunStatus.Running => "badge status-running",
+        RunStatus.Succeeded => "badge status-succeeded",
+        RunStatus.Failed => "badge status-failed",
+        RunStatus.Canceled => "badge status-canceled",
+        RunStatus.Skipped => "badge status-skipped",
+        _ => "badge",
+    };
+
+    private static string TriggerText(ChecklistTrigger trigger)
+        => trigger == ChecklistTrigger.Schedule ? "调度" : "手动";
+
+    private static string FormatDuration(long milliseconds) => milliseconds switch
+    {
+        <= 0 => "-",
+        < 1000 => $"{milliseconds} ms",
+        _ => $"{milliseconds / 1000d:0.0} s",
+    };
 }

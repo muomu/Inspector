@@ -6,79 +6,308 @@
 <h1>异常</h1>
 <p class="page-subtitle">
     finding 按 (Project, Environment, 检查单, 检查项) 去重：新异常与恢复各通知一次，持续期间只进日报。
-    去重与告警由 TPG-2713 接入。
+    默认只显示未恢复异常，可按状态与级别筛选；已归档的检查单 / 检查项 / 环境仍保留历史并标注「已归档」。
 </p>
+
+<form class="form-row filter-bar" method="get" action="/findings">
+    <label>
+        状态
+        <select name="status">
+            <option value="all" selected="@statusFilter.Equals("all", StringComparison.OrdinalIgnoreCase)">全部状态</option>
+            @foreach (var status in Enum.GetValues<FindingStatus>())
+            {
+                <option value="@status" selected="@statusFilter.Equals(status.ToString(), StringComparison.OrdinalIgnoreCase)">@FindingStatusText(status)</option>
+            }
+        </select>
+    </label>
+    <label>
+        级别
+        <select name="severity">
+            <option value="">全部级别</option>
+            @foreach (var severity in Enum.GetValues<Severity>())
+            {
+                <option value="@severity" selected="@severityFilter.Equals(severity.ToString(), StringComparison.OrdinalIgnoreCase)">@SeverityText(severity)</option>
+            }
+        </select>
+    </label>
+    <button type="submit" class="primary">筛选</button>
+    <a class="filter-reset" href="/findings">重置</a>
+</form>
+
+@if (loadError is not null)
+{
+    <p class="error-text">加载失败：@loadError</p>
+}
+
+<p class="muted">未恢复 @openCount 条 · 历史累计 @totalCount 条。@(rows.Count >= MaxRows ? "（仅展示最近 200 条，可用筛选缩小范围）" : "")</p>
 
 @if (rows.Count == 0)
 {
-    <div class="empty">还没有异常。执行链路接入后，判定型检查项异常会在这里出现。</div>
+    @if (!hasAnyFinding)
+    {
+        <div class="empty">还没有异常。执行链路接入后，判定型检查项异常会在这里出现。</div>
+    }
+    else if (IsDefaultOpenFilter)
+    {
+        <div class="empty">
+            当前没有未恢复异常。
+            <a href="/findings?status=Resolved">查看已恢复的异常</a>
+        </div>
+    }
+    else
+    {
+        <div class="empty">没有符合筛选条件的异常。<a href="/findings">清除筛选</a></div>
+    }
 }
 else
 {
-    <table class="data">
-        <thead>
-            <tr>
-                <th>级别</th>
-                <th>标题</th>
-                <th>项目 / 环境</th>
-                <th>检查单 / 检查项</th>
-                <th>首次</th>
-                <th>最近</th>
-                <th>状态</th>
-            </tr>
-        </thead>
-        <tbody>
-            @foreach (var row in rows)
-            {
+    <div class="table-scroll">
+        <table class="data wide">
+            <thead>
                 <tr>
-                    <td><span class="badge">@row.Severity</span></td>
-                    <td>@row.Title</td>
-                    <td>@row.ProjectName / @row.EnvironmentName</td>
-                    <td>@row.ChecklistName / @row.ItemTitle</td>
-                    <td>@row.FirstSeenAt.ToLocalTime().ToString("MM-dd HH:mm")</td>
-                    <td>@row.LastSeenAt.ToLocalTime().ToString("MM-dd HH:mm")</td>
-                    <td>@(row.Status == FindingStatus.Open ? "未恢复" : "已恢复")</td>
+                    <th>级别</th>
+                    <th>状态</th>
+                    <th>标题 / 说明</th>
+                    <th>项目 / 环境</th>
+                    <th>检查单 / 检查项</th>
+                    <th>RuleVersion</th>
+                    <th>关闭原因</th>
+                    <th>首次出现</th>
+                    <th>最近出现</th>
+                    <th>最近通知</th>
                 </tr>
-            }
-        </tbody>
-    </table>
+            </thead>
+            <tbody>
+                @foreach (var row in rows)
+                {
+                    <tr>
+                        <td><span class="@SeverityClass(row.Finding.Severity)">@SeverityText(row.Finding.Severity)</span></td>
+                        <td><span class="@FindingStatusClass(row.Finding.Status)">@FindingStatusText(row.Finding.Status)</span></td>
+                        <td>
+                            @row.Finding.Title
+                            @if (!string.IsNullOrWhiteSpace(row.Finding.Message))
+                            {
+                                <div class="muted">@Shorten(row.Finding.Message, 160)</div>
+                            }
+                        </td>
+                        <td>
+                            @NameOrMissing(row.Project)
+                            @if (row.Project?.Archived == true)
+                            {
+                                <span class="badge archived">已归档</span>
+                            }
+                            <br />
+                            @NameOrMissing(row.Environment)
+                            @if (row.Environment?.Archived == true)
+                            {
+                                <span class="badge archived">已归档</span>
+                            }
+                        </td>
+                        <td>
+                            @NameOrMissing(row.Checklist)
+                            @if (row.Checklist?.Archived == true)
+                            {
+                                <span class="badge archived">已归档</span>
+                            }
+                            <br />
+                            @NameOrMissing(row.ChecklistItem)
+                            @if (row.ChecklistItem?.Archived == true)
+                            {
+                                <span class="badge archived">已归档</span>
+                            }
+                        </td>
+                        <td class="narrow-num">v@(row.Finding.RuleVersion)</td>
+                        <td>
+                            @if (row.Finding.CloseReason is { } reason)
+                            {
+                                <span>@CloseReasonText(reason)</span>
+                                @if (row.Finding.ResolvedAt is { } resolvedAt)
+                                {
+                                    <div class="muted">@resolvedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm")</div>
+                                }
+                            }
+                            else
+                            {
+                                <span class="muted">-</span>
+                            }
+                        </td>
+                        <td class="narrow-num">@row.Finding.FirstSeenAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm")</td>
+                        <td class="narrow-num">@row.Finding.LastSeenAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm")</td>
+                        <td class="narrow-num">@(row.Finding.LastNotifiedAt is { } notifiedAt ? notifiedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm") : "-")</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
 }
 
 @code {
+    private const int MaxRows = 200;
+
+    [SupplyParameterFromQuery(Name = "status")]
+    public string? StatusParam { get; set; }
+
+    [SupplyParameterFromQuery(Name = "severity")]
+    public string? SeverityParam { get; set; }
+
+    private sealed record NamedState(string Name, bool Archived);
+
     private sealed record Row(
-        Severity Severity,
-        string Title,
-        string ProjectName,
-        string EnvironmentName,
-        string ChecklistName,
-        string ItemTitle,
-        DateTimeOffset FirstSeenAt,
-        DateTimeOffset LastSeenAt,
-        FindingStatus Status);
+        Finding Finding,
+        NamedState? Project,
+        NamedState? Environment,
+        NamedState? Checklist,
+        NamedState? ChecklistItem);
 
     private List<Row> rows = [];
+    private int openCount;
+    private int totalCount;
+    private bool hasAnyFinding;
+    private string? loadError;
+    private string statusFilter = "Open";
+    private string severityFilter = string.Empty;
+
+    private bool IsDefaultOpenFilter =>
+        statusFilter.Equals("Open", StringComparison.OrdinalIgnoreCase)
+        && string.IsNullOrEmpty(severityFilter);
 
     protected override async Task OnInitializedAsync()
     {
-        await using var db = await DbFactory.CreateDbContextAsync();
-        rows = await (from finding in db.Findings
-                      join environment in db.Environments on finding.EnvironmentId equals environment.Id
-                      join project in db.Projects on finding.ProjectId equals project.Id
-                      join checklist in db.Checklists on finding.ChecklistId equals checklist.Id
-                      join item in db.ChecklistItems on finding.ChecklistItemId equals item.Id
-                      orderby finding.Status, finding.LastSeenAt descending
-                      select new Row(
-                          finding.Severity,
-                          finding.Title,
-                          project.Name,
-                          environment.Name,
-                          checklist.Name,
-                          item.Title,
-                          finding.FirstSeenAt,
-                          finding.LastSeenAt,
-                          finding.Status))
-            .AsNoTracking()
-            .Take(200)
-            .ToListAsync();
+        ParseFilters();
+        try
+        {
+            await using var db = await DbFactory.CreateDbContextAsync();
+
+            openCount = await db.Findings.CountAsync(x => x.Status == FindingStatus.Open);
+            totalCount = await db.Findings.CountAsync();
+            hasAnyFinding = totalCount > 0;
+
+            IQueryable<Finding> query = db.Findings.AsNoTracking();
+            if (!statusFilter.Equals("all", StringComparison.OrdinalIgnoreCase))
+            {
+                var status = Enum.Parse<FindingStatus>(statusFilter);
+                query = query.Where(x => x.Status == status);
+            }
+
+            if (!string.IsNullOrEmpty(severityFilter))
+            {
+                var severity = Enum.Parse<Severity>(severityFilter);
+                query = query.Where(x => x.Severity == severity);
+            }
+
+            var findings = await query
+                .OrderBy(x => x.Status)
+                .ThenByDescending(x => x.LastSeenAt)
+                .Take(MaxRows)
+                .ToListAsync();
+
+            var projectIds = findings.Select(x => x.ProjectId).Distinct().ToList();
+            var environmentIds = findings.Select(x => x.EnvironmentId).Distinct().ToList();
+            var checklistIds = findings.Select(x => x.ChecklistId).Distinct().ToList();
+            var itemIds = findings.Select(x => x.ChecklistItemId).Distinct().ToList();
+
+            var projects = await db.Projects
+                .Where(x => projectIds.Contains(x.Id))
+                .Select(x => new { x.Id, x.Name, x.IsArchived })
+                .AsNoTracking()
+                .ToListAsync();
+            var environments = await db.Environments
+                .Where(x => environmentIds.Contains(x.Id))
+                .Select(x => new { x.Id, x.Name, x.IsArchived })
+                .AsNoTracking()
+                .ToListAsync();
+            var checklists = await db.Checklists
+                .Where(x => checklistIds.Contains(x.Id))
+                .Select(x => new { x.Id, x.Name, x.IsArchived })
+                .AsNoTracking()
+                .ToListAsync();
+            var items = await db.ChecklistItems
+                .Where(x => itemIds.Contains(x.Id))
+                .Select(x => new { x.Id, x.Title, x.IsArchived })
+                .AsNoTracking()
+                .ToListAsync();
+
+            var projectMap = projects.ToDictionary(x => x.Id, x => new NamedState(x.Name, x.IsArchived));
+            var environmentMap = environments.ToDictionary(x => x.Id, x => new NamedState(x.Name, x.IsArchived));
+            var checklistMap = checklists.ToDictionary(x => x.Id, x => new NamedState(x.Name, x.IsArchived));
+            var itemMap = items.ToDictionary(x => x.Id, x => new NamedState(x.Title, x.IsArchived));
+
+            rows = findings.Select(x => new Row(
+                x,
+                projectMap.GetValueOrDefault(x.ProjectId),
+                environmentMap.GetValueOrDefault(x.EnvironmentId),
+                checklistMap.GetValueOrDefault(x.ChecklistId),
+                itemMap.GetValueOrDefault(x.ChecklistItemId))).ToList();
+        }
+        catch (Exception ex)
+        {
+            loadError = ex.Message;
+        }
+    }
+
+    private void ParseFilters()
+    {
+        if (string.IsNullOrWhiteSpace(StatusParam))
+        {
+            statusFilter = "Open";
+        }
+        else if (StatusParam.Equals("all", StringComparison.OrdinalIgnoreCase))
+        {
+            statusFilter = "all";
+        }
+        else if (Enum.TryParse<FindingStatus>(StatusParam, ignoreCase: true, out var status))
+        {
+            statusFilter = status.ToString();
+        }
+        else
+        {
+            statusFilter = "Open";
+        }
+
+        severityFilter = Enum.TryParse<Severity>(SeverityParam, ignoreCase: true, out var severity)
+            ? severity.ToString()
+            : string.Empty;
+    }
+
+    private static string NameOrMissing(NamedState? state)
+        => state is null ? "(已归档/已删除)" : state.Name;
+
+    private static string SeverityText(Severity severity) => severity switch
+    {
+        Severity.Info => "Info",
+        Severity.Warning => "Warning",
+        Severity.Critical => "Critical",
+        _ => severity.ToString(),
+    };
+
+    private static string SeverityClass(Severity severity) => severity switch
+    {
+        Severity.Info => "badge severity-info",
+        Severity.Warning => "badge severity-warning",
+        Severity.Critical => "badge severity-critical",
+        _ => "badge",
+    };
+
+    private static string FindingStatusText(FindingStatus status)
+        => status == FindingStatus.Open ? "未恢复" : "已恢复";
+
+    private static string FindingStatusClass(FindingStatus status)
+        => status == FindingStatus.Open ? "badge status-failed" : "badge status-succeeded";
+
+    private static string CloseReasonText(FindingCloseReason reason) => reason switch
+    {
+        FindingCloseReason.Recovered => "已恢复",
+        FindingCloseReason.RuleChanged => "判据变更",
+        _ => reason.ToString(),
+    };
+
+    private static string Shorten(string? value, int maxLength)
+    {
+        if (string.IsNullOrEmpty(value))
+        {
+            return "-";
+        }
+
+        return value.Length <= maxLength ? value : value[..maxLength] + "…";
     }
 }

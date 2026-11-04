@@ -1,77 +1,306 @@
 @page "/runs"
 @inject IDbContextFactory<GrowthInspectorDbContext> DbFactory
+@using System.Globalization
 
 <PageTitle>执行历史 · Growth Inspector</PageTitle>
 
 <h1>执行历史</h1>
 <p class="page-subtitle">
-    每轮执行都会写入检查单快照、检查项结果与工具调用审计；页面可回溯最近一轮。
+    每轮执行都会写入检查单快照、检查项结果与工具调用审计，可按检查单、状态与开始时间回溯。
+    状态包含 Succeeded / Failed / Canceled / Skipped 等；已归档的检查单与环境不会从历史中消失。
 </p>
+
+<form class="form-row filter-bar" method="get" action="/runs">
+    <label>
+        检查单
+        <select name="checklist">
+            <option value="">全部检查单</option>
+            @foreach (var option in checklistOptions)
+            {
+                <option value="@option.Id" selected="@(checklistFilter == option.Id.ToString())">@option.Name@(option.Archived ? "（已归档）" : "")</option>
+            }
+        </select>
+    </label>
+    <label>
+        状态
+        <select name="status">
+            <option value="">全部状态</option>
+            @foreach (var status in Enum.GetValues<RunStatus>())
+            {
+                <option value="@status" selected="@(statusFilter == status.ToString())">@StatusText(status)</option>
+            }
+        </select>
+    </label>
+    <label>
+        开始日期（起）
+        <input type="date" name="from" value="@fromFilter" />
+    </label>
+    <label>
+        开始日期（止）
+        <input type="date" name="to" value="@toFilter" />
+    </label>
+    <button type="submit" class="primary">筛选</button>
+    <a class="filter-reset" href="/runs">重置</a>
+</form>
+
+@if (loadError is not null)
+{
+    <p class="error-text">加载失败：@loadError</p>
+}
 
 @if (rows.Count == 0)
 {
-    <div class="empty">还没有执行记录。在检查单编辑页点击「立即运行」即可产生第一轮。</div>
+    @if (HasActiveFilter)
+    {
+        <div class="empty">没有符合筛选条件的执行记录。<a href="/runs">清除筛选</a></div>
+    }
+    else if (!hasAnyRun)
+    {
+        <div class="empty">还没有执行记录。在检查单编辑页点击「立即运行」即可产生第一轮。</div>
+    }
+    else
+    {
+        <div class="empty">没有可展示的执行记录。</div>
+    }
 }
 else
 {
-    <table class="data">
-        <thead>
-            <tr>
-                <th>检查单</th>
-                <th>环境</th>
-                <th>状态</th>
-                <th>开始时间</th>
-                <th>耗时</th>
-                <th>Token</th>
-                <th></th>
-            </tr>
-        </thead>
-        <tbody>
-            @foreach (var row in rows)
-            {
+    @if (HasActiveFilter)
+    {
+        <p class="muted">筛选结果 @rows.Count 条。@(rows.Count >= MaxRows ? "（仅展示最近 200 条）" : "")</p>
+    }
+    else if (rows.Count >= MaxRows)
+    {
+        <p class="muted">仅展示最近 200 条执行记录，可用筛选缩小范围。</p>
+    }
+
+    <div class="table-scroll">
+        <table class="data wide">
+            <thead>
                 <tr>
-                    <td><a href="/runs/@row.Id">@row.ChecklistName</a></td>
-                    <td>@row.EnvironmentName</td>
-                    <td><span class="badge">@row.Status</span></td>
-                    <td>@row.StartedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss")</td>
-                    <td>@row.DurationMs ms</td>
-                    <td>@(row.PromptTokens + row.CompletionTokens)</td>
-                    <td class="actions"><a href="/runs/@row.Id">详情</a></td>
+                    <th>检查单</th>
+                    <th>环境</th>
+                    <th>状态</th>
+                    <th>开始时间</th>
+                    <th>完成时间</th>
+                    <th>耗时</th>
+                    <th>Token（prompt / completion）</th>
+                    <th>触发方式</th>
+                    <th></th>
                 </tr>
-            }
-        </tbody>
-    </table>
+            </thead>
+            <tbody>
+                @foreach (var row in rows)
+                {
+                    <tr>
+                        <td>
+                            <a href="/runs/@row.Id">@NameOrMissing(row.ChecklistName)</a>
+                            @if (row.ChecklistArchived)
+                            {
+                                <span class="badge archived">已归档</span>
+                            }
+                        </td>
+                        <td>
+                            @NameOrMissing(row.EnvironmentName)
+                            @if (row.EnvironmentArchived)
+                            {
+                                <span class="badge archived">已归档</span>
+                            }
+                        </td>
+                        <td><span class="@StatusClass(row.Status)">@StatusText(row.Status)</span></td>
+                        <td class="narrow-num">@row.StartedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss")</td>
+                        <td class="narrow-num">@(row.CompletedAt is { } completed ? completed.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss") : "-")</td>
+                        <td class="narrow-num">@FormatDuration(row.DurationMs)</td>
+                        <td class="narrow-num">
+                            <strong>@(row.PromptTokens + row.CompletionTokens)</strong>
+                            <span class="muted">（@row.PromptTokens / @row.CompletionTokens）</span>
+                        </td>
+                        <td>@TriggerText(row.Trigger)</td>
+                        <td class="actions"><a href="/runs/@row.Id">详情</a></td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
 }
 
 @code {
+    private const int MaxRows = 200;
+
+    [SupplyParameterFromQuery(Name = "checklist")]
+    public string? ChecklistParam { get; set; }
+
+    [SupplyParameterFromQuery(Name = "status")]
+    public string? StatusParam { get; set; }
+
+    [SupplyParameterFromQuery(Name = "from")]
+    public string? FromParam { get; set; }
+
+    [SupplyParameterFromQuery(Name = "to")]
+    public string? ToParam { get; set; }
+
+    private sealed record ChecklistOption(Guid Id, string Name, bool Archived);
+
     private sealed record Row(
         Guid Id,
-        string ChecklistName,
-        string EnvironmentName,
+        string? ChecklistName,
+        bool ChecklistArchived,
+        string? EnvironmentName,
+        bool EnvironmentArchived,
         RunStatus Status,
         DateTimeOffset StartedAt,
+        DateTimeOffset? CompletedAt,
         long DurationMs,
         int PromptTokens,
-        int CompletionTokens);
+        int CompletionTokens,
+        ChecklistTrigger Trigger);
 
+    private List<ChecklistOption> checklistOptions = [];
     private List<Row> rows = [];
+    private bool hasAnyRun;
+    private string? loadError;
+    private string checklistFilter = string.Empty;
+    private string statusFilter = string.Empty;
+    private string fromFilter = string.Empty;
+    private string toFilter = string.Empty;
+
+    private bool HasActiveFilter =>
+        !string.IsNullOrEmpty(checklistFilter)
+        || !string.IsNullOrEmpty(statusFilter)
+        || !string.IsNullOrEmpty(fromFilter)
+        || !string.IsNullOrEmpty(toFilter);
 
     protected override async Task OnInitializedAsync()
     {
-        await using var db = await DbFactory.CreateDbContextAsync();
-        rows = await db.ChecklistRuns
-            .OrderByDescending(x => x.StartedAt)
-            .Take(100)
-            .Select(x => new Row(
+        ParseFilters();
+        try
+        {
+            await using var db = await DbFactory.CreateDbContextAsync();
+
+            checklistOptions = await db.Checklists
+                .OrderBy(x => x.Name)
+                .Select(x => new ChecklistOption(x.Id, x.Name, x.IsArchived))
+                .AsNoTracking()
+                .ToListAsync();
+
+            var from = ParseDate(fromFilter);
+            var to = ParseDate(toFilter);
+            var checklistId = ParseGuid(checklistFilter);
+            var status = ParseStatus(statusFilter);
+
+            IQueryable<ChecklistRun> query = db.ChecklistRuns
+                .Include(x => x.Checklist)
+                .Include(x => x.Environment)
+                .AsNoTracking();
+
+            if (checklistId is { } id)
+            {
+                query = query.Where(x => x.ChecklistId == id);
+            }
+
+            if (status is { } value)
+            {
+                query = query.Where(x => x.Status == value);
+            }
+
+            if (from is { } fromDate)
+            {
+                var fromStart = LocalDayStart(fromDate);
+                query = query.Where(x => x.StartedAt >= fromStart);
+            }
+
+            if (to is { } toDate)
+            {
+                var toExclusive = LocalDayStart(toDate).AddDays(1);
+                query = query.Where(x => x.StartedAt < toExclusive);
+            }
+
+            var runs = await query
+                .OrderByDescending(x => x.StartedAt)
+                .Take(MaxRows)
+                .ToListAsync();
+
+            rows = runs.Select(x => new Row(
                 x.Id,
-                x.Checklist != null ? x.Checklist.Name : "(已删除)",
-                x.Environment != null ? x.Environment.Name : "(已删除)",
+                x.Checklist?.Name,
+                x.Checklist?.IsArchived ?? false,
+                x.Environment?.Name,
+                x.Environment?.IsArchived ?? false,
                 x.Status,
                 x.StartedAt,
+                x.CompletedAt,
                 x.DurationMs,
                 x.PromptTokens,
-                x.CompletionTokens))
-            .AsNoTracking()
-            .ToListAsync();
+                x.CompletionTokens,
+                x.Trigger)).ToList();
+
+            hasAnyRun = await db.ChecklistRuns.AsNoTracking().AnyAsync();
+        }
+        catch (Exception ex)
+        {
+            loadError = ex.Message;
+        }
     }
+
+    private void ParseFilters()
+    {
+        checklistFilter = ParseGuid(ChecklistParam) is { } id ? id.ToString() : string.Empty;
+        statusFilter = ParseStatus(StatusParam) is { } status ? status.ToString() : string.Empty;
+        fromFilter = ParseDate(FromParam) is { } from ? from.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture) : string.Empty;
+        toFilter = ParseDate(ToParam) is { } to ? to.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture) : string.Empty;
+    }
+
+    private static Guid? ParseGuid(string? value)
+        => Guid.TryParse(value, out var id) ? id : null;
+
+    private static RunStatus? ParseStatus(string? value)
+        => !string.IsNullOrWhiteSpace(value) && Enum.TryParse<RunStatus>(value, ignoreCase: true, out var status)
+            ? status
+            : null;
+
+    private static DateOnly? ParseDate(string? value)
+        => DateOnly.TryParseExact(value, "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out var date)
+            ? date
+            : null;
+
+    private static DateTimeOffset LocalDayStart(DateOnly date)
+    {
+        var local = date.ToDateTime(TimeOnly.MinValue);
+        return new DateTimeOffset(local, TimeZoneInfo.Local.GetUtcOffset(local));
+    }
+
+    private static string NameOrMissing(string? name)
+        => string.IsNullOrWhiteSpace(name) ? "(已归档/已删除)" : name;
+
+    private static string StatusText(RunStatus status) => status switch
+    {
+        RunStatus.Pending => "等待中",
+        RunStatus.Running => "执行中",
+        RunStatus.Succeeded => "成功",
+        RunStatus.Failed => "失败",
+        RunStatus.Canceled => "已取消",
+        RunStatus.Skipped => "已跳过",
+        _ => status.ToString(),
+    };
+
+    private static string StatusClass(RunStatus status) => status switch
+    {
+        RunStatus.Pending => "badge status-pending",
+        RunStatus.Running => "badge status-running",
+        RunStatus.Succeeded => "badge status-succeeded",
+        RunStatus.Failed => "badge status-failed",
+        RunStatus.Canceled => "badge status-canceled",
+        RunStatus.Skipped => "badge status-skipped",
+        _ => "badge",
+    };
+
+    private static string TriggerText(ChecklistTrigger trigger)
+        => trigger == ChecklistTrigger.Schedule ? "调度" : "手动";
+
+    private static string FormatDuration(long milliseconds) => milliseconds switch
+    {
+        <= 0 => "-",
+        < 1000 => $"{milliseconds} ms",
+        _ => $"{milliseconds / 1000d:0.0} s",
+    };
 }

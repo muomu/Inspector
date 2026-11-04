@@ -110,6 +110,20 @@ table.data td.actions {
     font-size: 1.5rem;
 }
 
+.stat-grid.compact {
+    grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+    gap: 8px;
+    margin-top: 8px;
+}
+
+.stat-grid.compact .stat-card {
+    padding: 10px 12px;
+}
+
+.stat-grid.compact .stat-card strong {
+    font-size: 1.15rem;
+}
+
 .panel {
     border: 1px solid #e0e5ea;
     border-radius: 8px;
@@ -225,4 +239,184 @@ pre.report {
     line-height: 1.5;
     white-space: pre-wrap;
     word-break: break-word;
+}
+
+/* 执行历史 / 执行详情 / 异常：筛选、状态与证据展示 */
+.table-scroll {
+    overflow-x: auto;
+    margin-top: 8px;
+}
+
+table.data.wide {
+    min-width: 1080px;
+}
+
+table.data td.narrow-num,
+table.data th.narrow-num {
+    white-space: nowrap;
+    font-variant-numeric: tabular-nums;
+    font-size: 0.82rem;
+}
+
+.mono {
+    font-family: "JetBrains Mono", Consolas, "Courier New", monospace;
+    font-size: 0.82rem;
+    word-break: break-word;
+}
+
+.back-link {
+    margin: 0 0 10px;
+    font-size: 0.85rem;
+}
+
+.section-title {
+    margin: 28px 0 10px;
+    padding-bottom: 6px;
+    border-bottom: 1px solid #e5e9ee;
+}
+
+.subsection-title {
+    margin: 20px 0 8px;
+    font-size: 0.95rem;
+}
+
+.inline-badges {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px;
+}
+
+.meta-label {
+    display: inline-block;
+    margin-right: 8px;
+    color: #64707d;
+    font-size: 0.78rem;
+    font-weight: 600;
+}
+
+.filter-bar {
+    padding: 10px 12px;
+    border: 1px solid #e0e5ea;
+    border-radius: 8px;
+}
+
+.filter-reset {
+    align-self: center;
+    font-size: 0.82rem;
+}
+
+.badge.archived {
+    background: #f0f1f3;
+    color: #5f6b78;
+    border: 1px solid #d9dde3;
+}
+
+.badge.mismatch {
+    background: #fdecec;
+    color: #b42318;
+    border: 1px solid #e4b4ae;
+}
+
+.badge.status-succeeded {
+    background: #e7f6ec;
+    color: #1f7a3a;
+}
+
+.badge.status-running {
+    background: #e8f2fd;
+    color: #1f5f9d;
+}
+
+.badge.status-pending {
+    background: #fff5e6;
+    color: #8a5a00;
+}
+
+.badge.status-failed {
+    background: #fdecec;
+    color: #b42318;
+}
+
+.badge.status-canceled {
+    background: #eef1f4;
+    color: #5a6673;
+}
+
+.badge.status-skipped {
+    background: #f2eefb;
+    color: #5b3fa8;
+}
+
+.badge.severity-info {
+    background: #eaf2fd;
+    color: #275f9d;
+}
+
+.badge.severity-warning {
+    background: #fff4e0;
+    color: #8a5a00;
+}
+
+.badge.severity-critical {
+    background: #fdecec;
+    color: #b42318;
+}
+
+.stat-card .stat-value {
+    font-size: 1rem;
+    font-weight: 600;
+    word-break: break-word;
+}
+
+tr.row-error > td {
+    background: #fff7f7;
+}
+
+table.data tr.detail-row > td {
+    background: #fafbfc;
+    padding: 0 10px 12px;
+}
+
+.result-detail {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    font-size: 0.85rem;
+}
+
+.observation-list {
+    margin: 4px 0 0;
+    padding-left: 20px;
+}
+
+.evidence summary,
+.cell-json summary {
+    cursor: pointer;
+    color: #2f5ea8;
+    font-size: 0.82rem;
+}
+
+.evidence pre,
+.cell-json pre {
+    margin: 6px 0 0;
+    padding: 8px 10px;
+    background: #f7f8fa;
+    border: 1px solid #e0e5ea;
+    border-radius: 6px;
+    max-height: 260px;
+    overflow: auto;
+    white-space: pre-wrap;
+    word-break: break-word;
+    font-size: 0.78rem;
+    line-height: 1.45;
+}
+
+.cell-json summary {
+    display: inline-block;
+    max-width: 360px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    vertical-align: bottom;
 }
