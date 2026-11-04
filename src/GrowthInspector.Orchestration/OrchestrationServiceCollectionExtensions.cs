@@ -1,8 +1,15 @@
 using GrowthInspector.Core.Abstractions;
+using GrowthInspector.Core.Options;
+using GrowthInspector.Data;
 using GrowthInspector.Orchestration.Queue;
 using GrowthInspector.Orchestration.Scheduling;
+using GrowthInspector.Orchestration.Summaries;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.AI;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 
 namespace GrowthInspector.Orchestration;
 
@@ -27,6 +34,14 @@ public static class OrchestrationServiceCollectionExtensions
         services.AddScoped<ChecklistRunOrchestrator>();
         services.AddScoped<IChecklistRunExecutor>(sp => sp.GetRequiredService<ChecklistRunOrchestrator>());
         services.AddScoped<IInspectionOrchestrator>(sp => sp.GetRequiredService<ChecklistRunOrchestrator>());
+
+        // TPG-2711：摘要 agent。IChatClient 可选：未注册（或未配置密钥）时摘要服务走模板兜底。
+        services.AddScoped<IRunSummaryService>(sp => new RunSummaryService(
+            sp.GetRequiredService<IDbContextFactory<GrowthInspectorDbContext>>(),
+            sp.GetService<IChatClient>(),
+            sp.GetRequiredService<IOptions<DeepSeekOptions>>(),
+            sp.GetRequiredService<TimeProvider>(),
+            sp.GetRequiredService<ILogger<RunSummaryService>>()));
 
         return services;
     }

@@ -3,6 +3,7 @@ using GrowthInspector.Core.Options;
 using GrowthInspector.Data;
 using GrowthInspector.Orchestration;
 using Microsoft.Data.Sqlite;
+using Microsoft.Extensions.AI;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -63,6 +64,11 @@ internal sealed class InspectorTestHost : IAsyncDisposable
 
         services.AddGrowthInspectorData(databasePath);
         services.AddGrowthInspectorAgents(new DeepSeekOptions());
+
+        // 测试默认不联网：覆盖 Agents 注册的 IChatClient（有 key 时那是真实 DeepSeek 客户端），
+        // 摘要用例可在 afterBuilder 里再注册自己的 stub 覆盖这里。
+        services.AddSingleton<IChatClient>(new StubChatClient());
+
         services.AddGrowthInspectorOrchestration();
 
         afterBuilder?.Invoke(services);
@@ -82,6 +88,31 @@ internal sealed class InspectorTestHost : IAsyncDisposable
         {
             File.Delete(DatabasePath);
         }
+    }
+}
+
+/// <summary>测试默认 IChatClient：不访问网络，返回固定摘要与 token 用量。</summary>
+internal sealed class StubChatClient : IChatClient
+{
+    public Task<ChatResponse> GetResponseAsync(
+        IEnumerable<ChatMessage> messages,
+        ChatOptions? options = null,
+        CancellationToken cancellationToken = default)
+        => Task.FromResult(new ChatResponse(new ChatMessage(ChatRole.Assistant, "测试摘要"))
+        {
+            Usage = new UsageDetails { InputTokenCount = 1, OutputTokenCount = 1 },
+        });
+
+    public IAsyncEnumerable<ChatResponseUpdate> GetStreamingResponseAsync(
+        IEnumerable<ChatMessage> messages,
+        ChatOptions? options = null,
+        CancellationToken cancellationToken = default)
+        => throw new NotSupportedException("测试 stub 不支持流式响应。");
+
+    public object? GetService(Type serviceType, object? serviceKey = null) => null;
+
+    public void Dispose()
+    {
     }
 }
 
