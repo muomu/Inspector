@@ -4,6 +4,7 @@ using GrowthInspector.Core.Models;
 using GrowthInspector.Notifications.Lark;
 using GrowthInspector.Notifications.Reports;
 using GrowthInspector.Web.Services;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 
@@ -153,6 +154,16 @@ public sealed class DailyReportTests
         Assert.True(notification.IsMock);
         Assert.True(notification.Succeeded);
         Assert.Empty(harness.LarkNotifier.Sent);
+
+        // 日报内容同时落 AiSummary(DailyReport)，供日报页读取。
+        await using (var db = await harness.DbFactory.CreateDbContextAsync())
+        {
+            var summary = await db.AiSummaries
+                .SingleAsync(x => x.Kind == AiSummaryKind.DailyReport);
+            Assert.Equal(new DateOnly(2026, 11, 4), summary.ReportDate);
+            Assert.Contains("# 巡检日报 2026-11-04", summary.Content);
+            Assert.Contains("## ", summary.Content);
+        }
 
         // 同日再次 tick 不重复发送。
         harness.Clock.UtcNow = new DateTimeOffset(2026, 11, 4, 10, 5, 0, TimeSpan.Zero);

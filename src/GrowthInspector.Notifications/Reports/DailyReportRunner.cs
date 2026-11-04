@@ -45,6 +45,7 @@ public sealed class DailyReportRunner(
             .ToListAsync(cancellationToken);
 
         var results = new List<DailyReportDispatchResult>(projects.Count);
+        var generated = new List<(string ProjectName, string Markdown)>();
 
         foreach (var project in projects)
         {
@@ -53,6 +54,11 @@ public sealed class DailyReportRunner(
             try
             {
                 var report = await reportBuilder.BuildAsync(project.Id, reportDate, cancellationToken);
+
+                if (report.HasData)
+                {
+                    generated.Add((report.ProjectName, report.Markdown));
+                }
 
                 if (!report.HasData && !larkOptions.Value.SendEmptyDailyReports)
                 {
@@ -139,7 +145,54 @@ public sealed class DailyReportRunner(
             }
         }
 
+        // 日报内容同时落一份 AiSummary(DailyReport)，供日报页与 TPG-2716 的展示读取；
+        // 发送留痕仍在 LarkNotification。同一天重复生成时覆盖内容，不新增多份。
+        if (generated.Count > 0)
+        {
+            var content = BuildAggregatedContent(reportDate, generated);
+            var summary = await db.AiSummaries
+                .FirstOrDefaultAsync(
+                    x => x.Kind == AiSummaryKind.DailyReport && x.ReportDate == reportDate,
+                    cancellationToken);
+            if (summary is null)
+            {
+                summary = new AiSummary
+                {
+                    Kind = AiSummaryKind.DailyReport,
+                    ReportDate = reportDate,
+                };
+                db.AiSummaries.Add(summary);
+            }
+
+            summary.Content = content;
+            summary.Model = null;
+            summary.FallbackUsed = false;
+            summary.PromptTokens = 0;
+            summary.CompletionTokens = 0;
+            summary.DurationMs = 0;
+            summary.CreatedAt = timeProvider.GetUtcNow();
+        }
+
         await db.SaveChangesAsync(cancellationToken);
         return results;
+    }
+
+    private static string BuildAggregatedContent(
+        DateOnly reportDate,
+        IReadOnlyList<(string ProjectName, string Markdown)> generated)
+    {
+        var builder = new System.Text.StringBuilder();
+        builder.AppendLine($"# 巡检日报 {reportDate:yyyy-MM-dd}");
+        builder.AppendLine();
+
+        foreach (var project in generated)
+        {
+            builder.AppendLine($"## {project.ProjectName}");
+            builder.AppendLine();
+            builder.AppendLine(project.Markdown.Trim());
+            builder.AppendLine();
+        }
+
+        return builder.ToString();
     }
 }

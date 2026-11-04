@@ -166,7 +166,7 @@ internal static class SeedLoader
             string? argumentsJson = null;
             if (seed.Arguments is { Count: > 0 })
             {
-                argumentsJson = JsonSerializer.Serialize(seed.Arguments);
+                argumentsJson = JsonSerializer.Serialize(ResolveRelativePathArguments(seed.Arguments));
             }
 
             if (transport == McpTransport.Stdio && string.IsNullOrWhiteSpace(seed.Command))
@@ -202,6 +202,52 @@ internal static class SeedLoader
         }
 
         return result;
+    }
+
+    /// <summary>
+    /// stdio server 的参数可能带仓库内相对路径（如 --project tools/GrowthInspector.MockMcpServer）。
+    /// 应用启动时的子进程工作目录不固定，导入时把能解析到仓库内目录或文件的相对参数固化成绝对路径，
+    /// 避免执行期因为工作目录不同而拉起失败。无法解析的参数保持原样。
+    /// </summary>
+    private static List<string> ResolveRelativePathArguments(IReadOnlyList<string> arguments)
+    {
+        var repositoryRoot = FindRepositoryRoot();
+        var result = new List<string>(arguments.Count);
+
+        foreach (var argument in arguments)
+        {
+            if (repositoryRoot is not null
+                && !argument.StartsWith('-')
+                && !Path.IsPathRooted(argument))
+            {
+                var candidate = Path.GetFullPath(Path.Combine(repositoryRoot, argument));
+                if (Directory.Exists(candidate) || File.Exists(candidate))
+                {
+                    result.Add(candidate);
+                    continue;
+                }
+            }
+
+            result.Add(argument);
+        }
+
+        return result;
+    }
+
+    private static string? FindRepositoryRoot()
+    {
+        var directory = new DirectoryInfo(AppContext.BaseDirectory);
+        while (directory is not null)
+        {
+            if (File.Exists(Path.Combine(directory.FullName, "GrowthInspector.slnx")))
+            {
+                return directory.FullName;
+            }
+
+            directory = directory.Parent;
+        }
+
+        return null;
     }
 
     private static async Task<IReadOnlyList<RunbookSpec>> BindRunbooksAsync(
