@@ -1,6 +1,6 @@
 @page "/runbooks"
 @rendermode InteractiveServer
-@inject IDbContextFactory<GrowthInspectorDbContext> DbFactory
+@inject IManagementService Management
 @inject NavigationManager Nav
 
 <PageTitle>运维手册 · Growth Inspector</PageTitle>
@@ -8,7 +8,8 @@
 <h1>运维手册</h1>
 <p class="page-subtitle">
     纯 Markdown 的长期记忆：技术栈、指标语义、告警规则、排查经验。
-    执行时被检查单引用，全文交给 agent；手册本身不承载可执行判定。
+    通用手册自动注入同项目下所有检查单；专用手册默认不注入，被检查单显式引用后全文交给 agent。
+    默认只显示未归档手册。
 </p>
 
 @if (statusMessage is not null)
@@ -16,10 +17,11 @@
     <p class="muted">@statusMessage</p>
 }
 
-@if (loadError is not null)
-{
-    <p class="error-text">加载失败：@loadError</p>
-}
+<div class="form-row">
+    <label class="checkbox-line">
+        <input type="checkbox" @bind="showArchived" @bind:after="ReloadAsync" /> 显示已归档
+    </label>
+</div>
 
 @if (rows.Count == 0)
 {
@@ -32,7 +34,10 @@ else
             <tr>
                 <th>标题</th>
                 <th>项目</th>
+                <th>类别</th>
+                <th>被检查单引用</th>
                 <th>更新时间</th>
+                <th>状态</th>
                 <th></th>
             </tr>
         </thead>
@@ -42,8 +47,14 @@ else
                 <tr>
                     <td><a href="/runbooks/@row.Id">@row.Title</a></td>
                     <td>@row.ProjectName</td>
+                    <td><span class="badge">@(row.Kind == RunbookKind.General ? "通用" : "专用")</span></td>
+                    <td>@row.ReferencedByChecklistCount</td>
                     <td>@row.UpdatedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm")</td>
-                    <td class="actions"><a href="/runbooks/@row.Id">编辑</a></td>
+                    <td><span class="badge">@(row.IsArchived ? "已归档" : "启用")</span></td>
+                    <td class="actions">
+                        <a href="/runbooks/@row.Id">编辑</a>
+                        <button @onclick="() => ToggleArchivedAsync(row)">@(row.IsArchived ? "取消归档" : "归档")</button>
+                    </td>
                 </tr>
             }
         </tbody>
@@ -73,20 +84,26 @@ else
                 标题
                 <input @bind="newTitle" placeholder="如：growth 核心链路巡检" />
             </label>
+            <label>
+                类别
+                <select @bind="newKindText">
+                    <option value="Specialized">专用（被引用后注入）</option>
+                    <option value="General">通用（自动注入）</option>
+                </select>
+            </label>
             <button class="primary" @onclick="CreateAsync">创建并编辑</button>
         </div>
     }
 </div>
 
 @code {
-    private sealed record Row(Guid Id, string Title, string ProjectName, DateTimeOffset UpdatedAt);
-
-    private List<Row> rows = [];
-    private List<Project> projects = [];
+    private List<RunbookSummaryView> rows = [];
+    private List<ProjectView> projects = [];
     private string newProjectId = "";
     private string newTitle = "";
+    private string newKindText = "Specialized";
+    private bool showArchived;
     private string? statusMessage;
-    private string? loadError;
 
     protected override async Task OnInitializedAsync()
     {
@@ -97,52 +114,57 @@ else
     {
         try
         {
-            await using var db = await DbFactory.CreateDbContextAsync();
-            projects = await db.Projects
-                .OrderBy(x => x.Name)
-                .AsNoTracking()
-                .ToListAsync();
-
-            rows = await db.Runbooks
-                .OrderByDescending(x => x.UpdatedAt)
-                .Select(x => new Row(x.Id, x.Title, x.Project!.Name, x.UpdatedAt))
-                .AsNoTracking()
-                .ToListAsync();
+            projects = (await Management.ListProjectsAsync(includeArchived: false, limit: 200)).Items.ToList();
+            rows = (await Management.ListRunbooksAsync(includeArchived: showArchived, limit: 200)).Items.ToList();
         }
-        catch (Exception ex)
+        catch (ManagementException ex)
         {
-            loadError = ex.Message;
+            statusMessage = ex.Message;
         }
     }
 
     private async Task CreateAsync()
     {
         statusMessage = null;
-
-        if (!Guid.TryParse(newProjectId, out var projectId))
+        try
         {
-            statusMessage = "请先选择项目。";
-            return;
+            if (!Guid.TryParse(newProjectId, out var projectId))
+            {
+                statusMessage = "请先选择项目。";
+                return;
+            }
+
+            if (!Enum.TryParse<RunbookKind>(newKindText, out var kind))
+            {
+                kind = RunbookKind.Specialized;
+            }
+
+            var runbookId = await Management.CreateRunbookAsync(
+                new CreateRunbookRequest(projectId, newTitle, Kind: kind));
+            Nav.NavigateTo($"/runbooks/{runbookId}");
         }
-
-        if (string.IsNullOrWhiteSpace(newTitle))
+        catch (ManagementException ex)
         {
-            statusMessage = "请填写标题。";
-            return;
+            statusMessage = ex.Message;
         }
-
-        var title = newTitle.Trim();
-        await using var db = await DbFactory.CreateDbContextAsync();
-        var runbook = new Runbook
+        catch (Exception ex)
         {
-            ProjectId = projectId,
-            Title = title,
-            Body = $"# {title}\n\n（在这里写下技术栈、指标语义、告警规则、排查经验）\n",
-        };
+            statusMessage = $"创建失败：{ex.Message}";
+        }
+    }
 
-        db.Runbooks.Add(runbook);
-        await db.SaveChangesAsync();
-
-        Nav.NavigateTo($"/runbooks/{runbook.Id}");
+    private async Task ToggleArchivedAsync(RunbookSummaryView row)
+    {
+        statusMessage = null;
+        try
+        {
+            await Management.SetRunbookArchivedAsync(row.Id, !row.IsArchived);
+            statusMessage = row.IsArchived ? "手册已取消归档。" : "手册已归档。";
+            await ReloadAsync();
+        }
+        catch (ManagementException ex)
+        {
+            statusMessage = ex.Message;
+        }
     }
 }

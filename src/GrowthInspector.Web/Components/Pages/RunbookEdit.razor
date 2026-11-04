@@ -1,110 +1,150 @@
 @page "/runbooks/{Id:guid}"
 @rendermode InteractiveServer
-@inject IDbContextFactory<GrowthInspectorDbContext> DbFactory
+@inject IManagementService Management
 @inject NavigationManager Nav
 
 <PageTitle>编辑手册 · Growth Inspector</PageTitle>
 
-@if (runbook is null)
+@if (!loaded)
 {
     <p class="muted">加载中…</p>
+}
+else if (runbook is null)
+{
+    <h1>编辑手册</h1>
+    <p class="error-text">@statusMessage</p>
+    <a href="/runbooks">返回手册列表</a>
 }
 else
 {
     <h1>编辑手册</h1>
     <p class="page-subtitle">
-        项目：@projectName
-        <span class="muted">｜手册只承载知识，不承载可执行判定；被以下 @referencedByCount 张检查单引用。</span>
+        项目：@runbook.ProjectName
+        <span class="muted">｜手册只承载知识，不承载可执行判定；被 @runbook.ReferencedByChecklistCount 张检查单引用。</span>
+        <span class="badge">@(isArchived ? "已归档" : "启用")</span>
     </p>
 
     <div class="form-col">
-        <label>
-            标题
-            <input @bind="runbook.Title" />
-        </label>
+        <div class="form-row">
+            <label style="flex:2;">
+                标题
+                <input @bind="title" />
+            </label>
+            <label>
+                类别
+                <select @bind="kindText">
+                    <option value="Specialized">专用（被引用后注入）</option>
+                    <option value="General">通用（自动注入）</option>
+                </select>
+            </label>
+        </div>
         <label>
             正文（Markdown）
-            <textarea class="markdown-editor" rows="24" @bind="runbook.Body"></textarea>
+            <textarea class="markdown-editor" rows="24" @bind="body"></textarea>
         </label>
     </div>
 
     <div class="form-row">
         <button class="primary" @onclick="SaveAsync">保存</button>
-        <button class="danger" @onclick="DeleteAsync">删除</button>
+        <button @onclick="ToggleArchivedAsync">@(isArchived ? "取消归档" : "归档")</button>
+        <a href="/runbooks">返回列表</a>
         <span class="muted">@statusMessage</span>
     </div>
+    <p class="muted">v1 的删除语义只有归档，没有硬删除。</p>
 }
 
 @code {
     [Parameter]
     public Guid Id { get; set; }
 
-    private Runbook? runbook;
-    private string projectName = "";
-    private int referencedByCount;
+    private bool loaded;
+    private RunbookView? runbook;
+    private string title = "";
+    private string body = "";
+    private string kindText = "Specialized";
+    private bool isArchived;
     private string? statusMessage;
 
     protected override async Task OnParametersSetAsync()
     {
-        await using var db = await DbFactory.CreateDbContextAsync();
-        runbook = await db.Runbooks
-            .AsNoTracking()
-            .SingleOrDefaultAsync(x => x.Id == Id);
-
-        if (runbook is null)
+        loaded = false;
+        try
         {
-            return;
+            runbook = await Management.GetRunbookAsync(Id);
+            if (runbook is not null)
+            {
+                title = runbook.Title;
+                body = runbook.Body;
+                kindText = runbook.Kind.ToString();
+                isArchived = runbook.IsArchived;
+            }
+            else
+            {
+                statusMessage = "手册不存在或已被清理。";
+            }
+        }
+        catch (ManagementException ex)
+        {
+            statusMessage = ex.Message;
         }
 
-        projectName = await db.Projects
-            .Where(x => x.Id == runbook.ProjectId)
-            .Select(x => x.Name)
-            .SingleAsync();
-
-        referencedByCount = await db.ChecklistRunbookRefs.CountAsync(x => x.RunbookId == Id);
+        loaded = true;
     }
 
     private async Task SaveAsync()
     {
+        statusMessage = null;
+        try
+        {
+            if (!Enum.TryParse<RunbookKind>(kindText, out var kind))
+            {
+                kind = RunbookKind.Specialized;
+            }
+
+            await Management.UpdateRunbookAsync(
+                Id,
+                new UpdateRunbookRequest(title, kind, body));
+
+            statusMessage = $"已保存 {DateTimeOffset.Now:HH:mm:ss}";
+            await ReloadAsync();
+        }
+        catch (ManagementException ex)
+        {
+            statusMessage = ex.Message;
+        }
+        catch (Exception ex)
+        {
+            statusMessage = $"保存失败：{ex.Message}";
+        }
+    }
+
+    private async Task ToggleArchivedAsync()
+    {
+        statusMessage = null;
+        try
+        {
+            await Management.SetRunbookArchivedAsync(Id, !isArchived);
+            isArchived = !isArchived;
+            statusMessage = isArchived ? "手册已归档。" : "手册已取消归档。";
+            await ReloadAsync();
+        }
+        catch (ManagementException ex)
+        {
+            statusMessage = ex.Message;
+        }
+    }
+
+    private async Task ReloadAsync()
+    {
+        runbook = await Management.GetRunbookAsync(Id);
         if (runbook is null)
         {
             return;
         }
 
-        if (string.IsNullOrWhiteSpace(runbook.Title))
-        {
-            statusMessage = "标题不能为空。";
-            return;
-        }
-
-        await using var db = await DbFactory.CreateDbContextAsync();
-        var entity = await db.Runbooks.SingleOrDefaultAsync(x => x.Id == Id);
-        if (entity is null)
-        {
-            statusMessage = "手册已不存在。";
-            return;
-        }
-
-        entity.Title = runbook.Title.Trim();
-        entity.Body = runbook.Body;
-        entity.UpdatedAt = DateTimeOffset.UtcNow;
-        await db.SaveChangesAsync();
-
-        statusMessage = $"已保存 {DateTimeOffset.Now:HH:mm:ss}";
-    }
-
-    private async Task DeleteAsync()
-    {
-        await using var db = await DbFactory.CreateDbContextAsync();
-        var entity = await db.Runbooks.SingleOrDefaultAsync(x => x.Id == Id);
-        if (entity is null)
-        {
-            Nav.NavigateTo("/runbooks");
-            return;
-        }
-
-        db.Runbooks.Remove(entity);
-        await db.SaveChangesAsync();
-        Nav.NavigateTo("/runbooks");
+        title = runbook.Title;
+        body = runbook.Body;
+        kindText = runbook.Kind.ToString();
+        isArchived = runbook.IsArchived;
     }
 }

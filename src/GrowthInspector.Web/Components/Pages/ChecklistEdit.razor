@@ -1,7 +1,7 @@
 @page "/checklists/{Id:guid}"
 @rendermode InteractiveServer
-@inject IDbContextFactory<GrowthInspectorDbContext> DbFactory
-@inject IInspectionOrchestrator Orchestrator
+@inject IManagementService Management
+@inject IChecklistRunQueue RunQueue
 @inject NavigationManager Nav
 
 <PageTitle>编辑检查单 · Growth Inspector</PageTitle>
@@ -10,10 +10,19 @@
 {
     <p class="muted">加载中…</p>
 }
+else if (checklist is null)
+{
+    <h1>编辑检查单</h1>
+    <p class="error-text">@statusMessage</p>
+}
 else
 {
     <h1>编辑检查单</h1>
-    <p class="page-subtitle">项目：@projectName</p>
+    <p class="page-subtitle">
+        项目：@checklist.ProjectName
+        <span class="badge">@(checklist.IsArchived ? "已归档" : "启用")</span>
+        ｜结构化断言由框架复核，agent 只负责取证。
+    </p>
 
     <div class="panel">
         <div class="form-row">
@@ -32,6 +41,7 @@ else
             <label class="checkbox-line">
                 <input type="checkbox" @bind="isEnabled" /> 启用
             </label>
+            <button @onclick="ToggleArchivedAsync">@(isArchived ? "取消归档" : "归档")</button>
         </div>
         <label>
             说明
@@ -41,47 +51,74 @@ else
 
     <div class="panel">
         <h2>检查项</h2>
-        <p class="muted">同时声明阈值与级别为判定型，参与告警；只有数据源提示的为信息型，只收集证据。</p>
-        <table class="data">
-            <thead>
-                <tr>
-                    <th>名称</th>
-                    <th>数据源提示</th>
-                    <th>预期</th>
-                    <th>阈值</th>
-                    <th>级别</th>
-                    <th></th>
-                </tr>
-            </thead>
-            <tbody>
-                @foreach (var item in itemDrafts)
-                {
-                    <tr>
-                        <td><input @bind="item.Title" /></td>
-                        <td><input @bind="item.DataSourceHint" /></td>
-                        <td><input @bind="item.Expectation" /></td>
-                        <td><input @bind="item.Threshold" /></td>
-                        <td>
-                            <select @bind="item.SeverityText">
-                                <option value="">（信息型）</option>
-                                <option value="Info">Info</option>
-                                <option value="Warning">Warning</option>
-                                <option value="Critical">Critical</option>
-                            </select>
-                        </td>
-                        <td><button class="danger" @onclick="() => RemoveItem(item)">删除</button></td>
-                    </tr>
-                }
-            </tbody>
-        </table>
+        <p class="muted">
+            判定型检查项声明结构化断言（工具名 / 参数模板 / 取值路径 / 比较符 / 阈值 / 窗口 / 级别 / RuleVersion）。
+            <strong>断言成立 = 健康（Ok），不成立 = 异常。</strong>
+            断言字段全部留空表示信息型，只收集证据、不参与告警。
+        </p>
+
+        @foreach (var item in itemDrafts)
+        {
+            <div class="panel" style="margin-top:12px;">
+                <div class="form-row">
+                    <label style="flex:2;">检查项名称<input @bind="item.Title" /></label>
+                    <label>
+                        严重级别
+                        <select @bind="item.SeverityText">
+                            <option value="">（信息型）</option>
+                            <option value="Info">Info</option>
+                            <option value="Warning">Warning</option>
+                            <option value="Critical">Critical</option>
+                        </select>
+                    </label>
+                    <label>
+                        RuleVersion
+                        <input type="number" @bind="item.RuleVersion" placeholder="@item.LoadedRuleVersion" />
+                    </label>
+                    <button class="danger" @onclick="() => RemoveItem(item)">删除</button>
+                </div>
+                <div class="form-row">
+                    <label style="flex:1;">工具名<input @bind="item.ToolName" placeholder="如 mock__QueryMetric" /></label>
+                    <label style="flex:1;">取值路径<input @bind="item.ValuePath" placeholder="$.value" /></label>
+                    <label>
+                        比较符
+                        <select @bind="item.OperatorText">
+                            <option value="">（信息型）</option>
+                            <option value="Lt">&lt; 阈值</option>
+                            <option value="Lte">&lt;= 阈值</option>
+                            <option value="Gt">&gt; 阈值</option>
+                            <option value="Gte">&gt;= 阈值</option>
+                            <option value="Eq">== 阈值</option>
+                            <option value="Ne">!= 阈值</option>
+                            <option value="Contains">包含阈值</option>
+                            <option value="NotContains">不包含阈值</option>
+                        </select>
+                    </label>
+                    <label>阈值<input @bind="item.Threshold" /></label>
+                    <label>窗口<input @bind="item.Window" placeholder="1h / 24h" /></label>
+                </div>
+                <div class="form-col">
+                    <label>
+                        参数模板（JSON 对象）
+                        <textarea rows="2" @bind="item.ArgumentsTemplate" placeholder="{&quot;metric&quot;:&quot;http_p99_latency_ms&quot;}"></textarea>
+                    </label>
+                    <label>数据源提示<input @bind="item.DataSourceHint" /></label>
+                    <label>预期<input @bind="item.Expectation" /></label>
+                </div>
+                <p class="muted">
+                    当前规则版本 v@item.LoadedRuleVersion；RuleVersion 留空时，判据变化会自动 +1。
+                    断言成立 = 健康（Ok），不成立 = 异常。
+                </p>
+            </div>
+        }
         <button @onclick="AddItem">新增检查项</button>
     </div>
 
     <div class="panel">
-        <h2>引用的运维手册（同项目）</h2>
+        <h2>引用的运维手册（同项目、未归档、专用）</h2>
         @if (availableRunbooks.Count == 0)
         {
-            <p class="muted">同项目下还没有手册，请先到 <a href="/runbooks">运维手册</a> 创建。</p>
+            <p class="muted">同项目下还没有可引用的专用手册，请先到 <a href="/runbooks">运维手册</a> 创建。</p>
         }
         else
         {
@@ -92,9 +129,11 @@ else
                            checked="@selectedRunbookIds.Contains(runbook.Id)"
                            @onchange="e => ToggleRunbook(runbook.Id, e)" />
                     @runbook.Title
+                    <span class="badge">@(runbook.Kind == RunbookKind.General ? "通用" : "专用")</span>
                 </label>
             }
         }
+        <p class="muted">通用手册会自动注入该项目下所有检查单，不需要在这里引用。</p>
     </div>
 
     <div class="form-row">
@@ -108,7 +147,7 @@ else
                 }
             </select>
         </label>
-        <button @onclick="RunNowAsync">立即运行</button>
+        <button @onclick="RunNowAsync" disabled="@isArchived">立即运行</button>
         <span class="muted">@statusMessage</span>
     </div>
 }
@@ -120,103 +159,124 @@ else
     private sealed class ItemDraft
     {
         public Guid Id { get; set; }
+
         public string Title { get; set; } = "";
+
         public string? DataSourceHint { get; set; }
+
         public string? Expectation { get; set; }
+
+        public string? ToolName { get; set; }
+
+        public string? ArgumentsTemplate { get; set; }
+
+        public string? ValuePath { get; set; }
+
+        public string OperatorText { get; set; } = "";
+
         public string? Threshold { get; set; }
+
+        public string? Window { get; set; }
+
         public string SeverityText { get; set; } = "";
+
+        public int? RuleVersion { get; set; }
+
+        public int LoadedRuleVersion { get; set; } = 1;
+
+        public static ItemDraft From(ChecklistItemView view) => new()
+        {
+            Id = view.Id,
+            Title = view.Title,
+            DataSourceHint = view.DataSourceHint,
+            Expectation = view.Expectation,
+            ToolName = view.ToolName,
+            ArgumentsTemplate = view.ArgumentsTemplate,
+            ValuePath = view.ValuePath,
+            OperatorText = view.Operator?.ToString() ?? "",
+            Threshold = view.Threshold,
+            Window = view.Window,
+            SeverityText = view.Severity?.ToString() ?? "",
+            RuleVersion = null,
+            LoadedRuleVersion = view.RuleVersion,
+        };
     }
 
-    private sealed record RunbookOption(Guid Id, string Title);
-
     private bool loaded;
+    private ChecklistView? checklist;
     private string name = "";
-    private string? description;
+    private string description = "";
     private string frequencyText = "Manual";
     private bool isEnabled;
-    private string projectName = "";
-    private Guid projectId;
+    private bool isArchived;
     private List<ItemDraft> itemDrafts = [];
-    private List<RunbookOption> availableRunbooks = [];
+    private List<Guid> removedItemIds = [];
+    private List<RunbookSummaryView> availableRunbooks = [];
     private HashSet<Guid> selectedRunbookIds = [];
-    private List<GrowthInspector.Core.Models.Environment> environments = [];
+    private List<EnvironmentView> environments = [];
     private string runEnvironmentId = "";
     private string? statusMessage;
 
     protected override async Task OnParametersSetAsync()
     {
-        await using var db = await DbFactory.CreateDbContextAsync();
+        await LoadAsync();
+    }
 
-        var checklist = await db.Checklists
-            .Include(x => x.Items)
-            .Include(x => x.RunbookRefs)
-            .AsNoTracking()
-            .SingleOrDefaultAsync(x => x.Id == Id);
-
-        if (checklist is null)
+    private async Task LoadAsync()
+    {
+        loaded = false;
+        statusMessage = null;
+        try
         {
-            loaded = true;
-            statusMessage = "检查单不存在。";
-            return;
-        }
-
-        projectId = checklist.ProjectId;
-        projectName = await db.Projects
-            .Where(x => x.Id == projectId)
-            .Select(x => x.Name)
-            .SingleAsync();
-
-        name = checklist.Name;
-        description = checklist.Description;
-        frequencyText = checklist.Frequency.ToString();
-        isEnabled = checklist.IsEnabled;
-
-        itemDrafts = checklist.Items
-            .OrderBy(x => x.SortOrder)
-            .Select(x => new ItemDraft
+            checklist = await Management.GetChecklistAsync(Id);
+            if (checklist is null)
             {
-                Id = x.Id,
-                Title = x.Title,
-                DataSourceHint = x.DataSourceHint,
-                Expectation = x.Expectation,
-                Threshold = x.Threshold,
-                SeverityText = x.Severity?.ToString() ?? "",
-            })
-            .ToList();
+                loaded = true;
+                statusMessage = "检查单不存在或已被清理。";
+                return;
+            }
 
-        availableRunbooks = await db.Runbooks
-            .Where(x => x.ProjectId == projectId)
-            .OrderBy(x => x.Title)
-            .Select(x => new RunbookOption(x.Id, x.Title))
-            .AsNoTracking()
-            .ToListAsync();
+            name = checklist.Name;
+            description = checklist.Description ?? "";
+            frequencyText = checklist.Frequency.ToString();
+            isEnabled = checklist.IsEnabled;
+            isArchived = checklist.IsArchived;
 
-        selectedRunbookIds = checklist.RunbookRefs
-            .Select(x => x.RunbookId)
-            .ToHashSet();
+            itemDrafts = (await Management.ListChecklistItemsAsync(Id))
+                .Items
+                .Select(ItemDraft.From)
+                .ToList();
+            removedItemIds = [];
 
-        environments = await db.Environments
-            .Where(x => x.ProjectId == projectId)
-            .OrderByDescending(x => x.IsDefault)
-            .ThenBy(x => x.Name)
-            .AsNoTracking()
-            .ToListAsync();
+            var references = (await Management.ListChecklistRunbookRefsAsync(Id)).Items;
+            selectedRunbookIds = references.Select(x => x.RunbookId).ToHashSet();
+            availableRunbooks = (await Management.ListAssignableRunbooksAsync(Id)).ToList();
 
-        runEnvironmentId = environments.FirstOrDefault(x => x.IsDefault)?.Id.ToString()
-            ?? environments.FirstOrDefault()?.Id.ToString()
-            ?? "";
+            environments = (await Management.ListEnvironmentsAsync(
+                projectId: checklist.ProjectId,
+                limit: 200)).Items.ToList();
+
+            runEnvironmentId = environments.FirstOrDefault(x => x.IsDefault)?.Id.ToString()
+                ?? environments.FirstOrDefault()?.Id.ToString()
+                ?? "";
+        }
+        catch (ManagementException ex)
+        {
+            statusMessage = ex.Message;
+        }
 
         loaded = true;
     }
 
-    private void AddItem()
-    {
-        itemDrafts.Add(new ItemDraft());
-    }
+    private void AddItem() => itemDrafts.Add(new ItemDraft());
 
     private void RemoveItem(ItemDraft item)
     {
         itemDrafts.Remove(item);
+        if (item.Id != Guid.Empty)
+        {
+            removedItemIds.Add(item.Id);
+        }
     }
 
     private void ToggleRunbook(Guid runbookId, ChangeEventArgs args)
@@ -234,128 +294,145 @@ else
     private async Task<bool> SaveAsync()
     {
         statusMessage = null;
-
-        if (string.IsNullOrWhiteSpace(name))
-        {
-            statusMessage = "名称不能为空。";
-            return false;
-        }
-
-        if (!Enum.TryParse<ChecklistFrequency>(frequencyText, out var frequency))
-        {
-            frequency = ChecklistFrequency.Manual;
-        }
-
-        await using var db = await DbFactory.CreateDbContextAsync();
-        var entity = await db.Checklists
-            .Include(x => x.Items)
-            .Include(x => x.RunbookRefs)
-            .SingleOrDefaultAsync(x => x.Id == Id);
-
-        if (entity is null)
+        if (checklist is null)
         {
             statusMessage = "检查单不存在。";
             return false;
         }
 
-        entity.Name = name.Trim();
-        entity.Description = string.IsNullOrWhiteSpace(description) ? null : description.Trim();
-        entity.Frequency = frequency;
-        entity.IsEnabled = isEnabled;
-        entity.UpdatedAt = DateTimeOffset.UtcNow;
-
-        // 同步检查项：删除被移除的、更新已有的、追加新的。
-        var keptIds = itemDrafts
-            .Where(x => x.Id != Guid.Empty)
-            .Select(x => x.Id)
-            .ToHashSet();
-
-        foreach (var existing in entity.Items.ToList())
+        try
         {
-            if (!keptIds.Contains(existing.Id))
+            if (!Enum.TryParse<ChecklistFrequency>(frequencyText, out var frequency))
             {
-                db.ChecklistItems.Remove(existing);
-            }
-        }
-
-        var sortOrder = 0;
-        foreach (var draft in itemDrafts)
-        {
-            if (string.IsNullOrWhiteSpace(draft.Title))
-            {
-                continue;
+                frequency = ChecklistFrequency.Manual;
             }
 
-            var item = draft.Id != Guid.Empty
-                ? entity.Items.FirstOrDefault(x => x.Id == draft.Id)
-                : null;
+            await Management.UpdateChecklistAsync(
+                Id,
+                new UpdateChecklistRequest(
+                    name,
+                    NullIfBlank(description),
+                    frequency,
+                    isEnabled));
 
-            if (item is null)
+            foreach (var removedId in removedItemIds)
             {
-                item = new ChecklistItem { ChecklistId = entity.Id };
-                entity.Items.Add(item);
+                await Management.SetChecklistItemArchivedAsync(removedId, true);
             }
 
-            item.Title = draft.Title.Trim();
-            item.SortOrder = sortOrder++;
-            item.DataSourceHint = NullIfBlank(draft.DataSourceHint);
-            item.Expectation = NullIfBlank(draft.Expectation);
-            item.Threshold = NullIfBlank(draft.Threshold);
-            item.Severity = ParseSeverity(draft.SeverityText);
-            item.UpdatedAt = DateTimeOffset.UtcNow;
-        }
+            removedItemIds.Clear();
 
-        // 同步手册引用：增删差异，避免整表重建触发唯一键冲突。
-        var currentRefs = entity.RunbookRefs
-            .Select(x => x.RunbookId)
-            .ToHashSet();
-
-        foreach (var reference in entity.RunbookRefs.ToList())
-        {
-            if (!selectedRunbookIds.Contains(reference.RunbookId))
+            var sortOrder = 0;
+            foreach (var draft in itemDrafts)
             {
-                entity.RunbookRefs.Remove(reference);
+                if (string.IsNullOrWhiteSpace(draft.Title))
+                {
+                    continue;
+                }
+
+                var input = new ChecklistItemInput(
+                    draft.Title,
+                    NullIfBlank(draft.DataSourceHint),
+                    NullIfBlank(draft.Expectation),
+                    NullIfBlank(draft.ToolName),
+                    NullIfBlank(draft.ArgumentsTemplate),
+                    NullIfBlank(draft.ValuePath),
+                    ParseOperator(draft.OperatorText),
+                    NullIfBlank(draft.Threshold),
+                    NullIfBlank(draft.Window),
+                    ParseSeverity(draft.SeverityText),
+                    draft.RuleVersion);
+
+                if (draft.Id == Guid.Empty)
+                {
+                    draft.Id = await Management.CreateChecklistItemAsync(
+                        new CreateChecklistItemRequest(Id, input, sortOrder));
+                }
+                else
+                {
+                    await Management.UpdateChecklistItemAsync(
+                        draft.Id,
+                        new UpdateChecklistItemRequest(input, sortOrder));
+                }
+
+                sortOrder++;
             }
-        }
 
-        foreach (var runbookId in selectedRunbookIds.Where(x => !currentRefs.Contains(x)))
-        {
-            entity.RunbookRefs.Add(new ChecklistRunbookRef
+            var existingRefs = (await Management.ListChecklistRunbookRefsAsync(Id)).Items
+                .Select(x => x.RunbookId)
+                .ToHashSet();
+
+            foreach (var runbookId in existingRefs.Except(selectedRunbookIds))
             {
-                ChecklistId = entity.Id,
-                RunbookId = runbookId,
-            });
+                await Management.RemoveChecklistRunbookRefAsync(Id, runbookId);
+            }
+
+            foreach (var runbookId in selectedRunbookIds.Except(existingRefs))
+            {
+                await Management.AddChecklistRunbookRefAsync(Id, runbookId);
+            }
+
+            await LoadAsync();
+            statusMessage = $"已保存 {DateTimeOffset.Now:HH:mm:ss}";
+            return true;
         }
-
-        await db.SaveChangesAsync();
-
-        statusMessage = $"已保存 {DateTimeOffset.Now:HH:mm:ss}";
-        return true;
+        catch (ManagementException ex)
+        {
+            statusMessage = ex.Message;
+            return false;
+        }
+        catch (Exception ex)
+        {
+            statusMessage = $"保存失败：{ex.Message}";
+            return false;
+        }
     }
 
-    private async Task RunNowAsync()
+    private async Task ToggleArchivedAsync()
     {
-        if (!Guid.TryParse(runEnvironmentId, out var environmentId))
-        {
-            statusMessage = "请先选择执行环境（到设置里创建）。";
-            return;
-        }
-
-        if (!await SaveAsync())
+        if (checklist is null)
         {
             return;
         }
 
         try
         {
-            var runId = await Orchestrator.RunAsync(Id, environmentId);
-            Nav.NavigateTo($"/runs/{runId}");
+            await Management.SetChecklistArchivedAsync(Id, !isArchived);
+            isArchived = !isArchived;
+            statusMessage = isArchived ? "检查单已归档。" : "检查单已取消归档。";
+        }
+        catch (ManagementException ex)
+        {
+            statusMessage = ex.Message;
+        }
+    }
+
+    private async Task RunNowAsync()
+    {
+        if (!await SaveAsync())
+        {
+            return;
+        }
+
+        if (!Guid.TryParse(runEnvironmentId, out var environmentId))
+        {
+            statusMessage = "请先选择执行环境（到设置里创建）。";
+            return;
+        }
+
+        try
+        {
+            await RunQueue.EnqueueAsync(ChecklistTrigger.Manual, Id, environmentId);
+            statusMessage = "已加入执行队列，稍后到执行历史查看结果。";
         }
         catch (Exception ex)
         {
-            statusMessage = $"执行失败：{ex.Message}";
+            statusMessage = $"加入执行队列失败：{ex.Message}";
         }
     }
+
+    private static ComparisonOperator? ParseOperator(string? text)
+        => Enum.TryParse<ComparisonOperator>(text, out var value) ? value : null;
 
     private static Severity? ParseSeverity(string? text)
         => Enum.TryParse<Severity>(text, out var severity) ? severity : null;
