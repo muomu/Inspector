@@ -2,204 +2,299 @@ using System.Diagnostics;
 using System.Text.Json;
 using GrowthInspector.Core.Abstractions;
 using GrowthInspector.Core.Models;
+using GrowthInspector.Core.Options;
 using GrowthInspector.Data;
+using GrowthInspector.Orchestration.Scheduling;
+using GrowthInspector.Orchestration.Summaries;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 
 namespace GrowthInspector.Orchestration;
 
 /// <summary>
-/// 检查单执行编排：写快照 → 按 SortOrder 串行执行检查项（每项立即落库）→ 收尾。
-/// 后台队列 / 并发 / 互斥 / 启动清理由 TPG-2706 接入；执行 agent（取证 + claim + 复核）
-/// 由 TPG-2708 / TPG-2709 接入。本类不引入 MAF，也不做检查项级 fan-out。
+/// 检查单执行编排：读快照 → 按 SortOrder 串行执行检查项（每项结束立即落库）→ 收尾。
+/// 检查单内部无并发；检查单之间的并行由后台队列 worker 提供（TPG-2707）。
+/// 本类不引入 MAF，也不做检查项级 fan-out。
 /// </summary>
 public sealed class ChecklistRunOrchestrator(
+    ChecklistRunFactory runFactory,
     IDbContextFactory<GrowthInspectorDbContext> dbContextFactory,
     IChecklistItemExecutor itemExecutor,
-    ILogger<ChecklistRunOrchestrator> logger) : IInspectionOrchestrator
+    IServiceProvider serviceProvider,
+    IOptions<InspectionOptions> options,
+    TimeProvider timeProvider,
+    ILogger<ChecklistRunOrchestrator> logger) : IInspectionOrchestrator, IChecklistRunExecutor
 {
-    private static readonly JsonSerializerOptions SnapshotJsonOptions = new(JsonSerializerDefaults.Web);
+    /// <summary>
+    /// 兼容入口：按 Manual 触发创建一轮执行并同步执行，返回执行记录 Id。
+    /// 未迁移到后台队列的页面继续走这里；同一 (检查单, 环境) 已在执行时返回 Skipped 记录 Id。
+    /// </summary>
+    public async Task<Guid> RunAsync(
+        Guid checklistId,
+        Guid environmentId,
+        CancellationToken cancellationToken = default)
+    {
+        var creation = await runFactory.CreateAsync(
+            ChecklistTrigger.Manual,
+            checklistId,
+            environmentId,
+            cancellationToken);
 
-    public async Task<Guid> RunAsync(Guid checklistId, Guid environmentId, CancellationToken cancellationToken = default)
+        if (!creation.Skipped)
+        {
+            await ExecuteRunAsync(creation.RunId, cancellationToken);
+        }
+
+        return creation.RunId;
+    }
+
+    /// <inheritdoc />
+    public async Task ExecuteRunAsync(Guid checklistRunId, CancellationToken cancellationToken = default)
     {
         await using var db = await dbContextFactory.CreateDbContextAsync(cancellationToken);
 
-        var checklist = await db.Checklists
-            .Include(x => x.Items)
-            .Include(x => x.RunbookRefs)
-                .ThenInclude(x => x.Runbook)
-            .AsNoTracking()
-            .SingleOrDefaultAsync(x => x.Id == checklistId, cancellationToken)
-            ?? throw new InvalidOperationException($"检查单 {checklistId} 不存在。");
+        var run = await db.ChecklistRuns
+            .Include(x => x.Checklist)
+            .SingleOrDefaultAsync(x => x.Id == checklistRunId, cancellationToken);
 
-        var environment = await db.Environments
-            .AsNoTracking()
-            .SingleOrDefaultAsync(x => x.Id == environmentId, cancellationToken)
-            ?? throw new InvalidOperationException($"环境 {environmentId} 不存在。");
-
-        if (environment.ProjectId != checklist.ProjectId)
+        if (run is null)
         {
-            throw new InvalidOperationException("检查单与环境不属于同一 Project，拒绝执行。");
+            logger.LogWarning("执行 {RunId} 不存在，跳过。", checklistRunId);
+            return;
         }
 
-        var project = await db.Projects
-            .AsNoTracking()
-            .SingleAsync(x => x.Id == checklist.ProjectId, cancellationToken);
-
-        // 通用知识：项目级手册，自动注入该项目下所有检查单（按 Project 隔离）。
-        var generalRunbooks = await db.Runbooks
-            .Where(x => x.ProjectId == checklist.ProjectId
-                && x.Kind == RunbookKind.General
-                && !x.IsArchived)
-            .OrderBy(x => x.Title)
-            .AsNoTracking()
-            .ToListAsync(cancellationToken);
-
-        // 专用知识：被检查单显式引用后才注入；引用不跨 Project。
-        var referencedRunbooks = checklist.RunbookRefs
-            .Where(x => x.Runbook is { IsArchived: false, Kind: RunbookKind.Specialized })
-            .Select(x => x.Runbook!)
-            .OrderBy(x => x.Title)
-            .ToList();
-
-        var items = checklist.Items
-            .Where(x => !x.IsArchived)
-            .OrderBy(x => x.SortOrder)
-            .ToList();
-
-        var itemIds = items.Select(x => x.Id).ToList();
-        var findings = await db.Findings
-            .Where(x => itemIds.Contains(x.ChecklistItemId))
-            .OrderByDescending(x => x.LastSeenAt)
-            .AsNoTracking()
-            .ToListAsync(cancellationToken);
-
-        var snapshot = new ChecklistSnapshot(
-            checklist.Id,
-            checklist.Name,
-            checklist.Frequency,
-            ChecklistTrigger.Manual,
-            items.Select(x => new ChecklistSnapshotItem(
-                x.Id,
-                x.Title,
-                x.SortOrder,
-                x.ToolName,
-                x.ArgumentsTemplate,
-                x.ValuePath,
-                x.Operator,
-                x.Threshold,
-                x.Window,
-                x.Severity,
-                x.RuleVersion,
-                x.DataSourceHint,
-                x.Expectation)).ToList(),
-            generalRunbooks.Select(x => new RunbookSnapshot(x.Id, x.Title, x.Kind, x.Body)).ToList(),
-            referencedRunbooks.Select(x => new RunbookSnapshot(x.Id, x.Title, x.Kind, x.Body)).ToList(),
-            findings.Select(x => new FindingSnapshot(
-                x.ChecklistItemId,
-                x.Status,
-                x.RuleVersion,
-                x.Title,
-                x.FirstSeenAt,
-                x.LastSeenAt,
-                x.ResolvedAt)).ToList());
-
-        var run = new ChecklistRun
+        if (run.Status is not (RunStatus.Pending or RunStatus.Running))
         {
-            ChecklistId = checklist.Id,
-            EnvironmentId = environment.Id,
-            Trigger = ChecklistTrigger.Manual,
-            SnapshotJson = JsonSerializer.Serialize(snapshot, SnapshotJsonOptions),
-            Status = RunStatus.Running,
-            StartedAt = DateTimeOffset.UtcNow,
-        };
+            logger.LogInformation(
+                "执行 {RunId} 当前状态为 {Status}，不再执行（Skipped / Canceled / 已终态）。",
+                checklistRunId,
+                run.Status);
+            return;
+        }
 
-        db.ChecklistRuns.Add(run);
-        await db.SaveChangesAsync(cancellationToken);
+        var checklist = run.Checklist;
+        if (checklist is null)
+        {
+            logger.LogError("执行 {RunId} 缺少检查单关联，无法执行。", checklistRunId);
+            run.Status = RunStatus.Failed;
+            run.ErrorMessage = "执行记录缺少检查单关联。";
+            run.CompletedAt = timeProvider.GetUtcNow();
+            await db.SaveChangesAsync(cancellationToken);
+            return;
+        }
 
         var stopwatch = Stopwatch.StartNew();
         var promptTokens = 0;
         var completionTokens = 0;
-        var hasError = false;
 
-        foreach (var item in snapshot.Items)
+        try
         {
-            cancellationToken.ThrowIfCancellationRequested();
+            var snapshot = JsonSerializer.Deserialize<ChecklistSnapshot>(
+                    run.SnapshotJson,
+                    ChecklistRunFactory.SnapshotJsonOptions)
+                ?? throw new InvalidOperationException("执行快照为空，无法开始执行。");
 
-            var request = new ChecklistItemExecutionRequest(
-                run.Id,
-                project.Id,
-                environment.Id,
-                project.OpsContext,
-                item,
-                snapshot.GeneralRunbooks,
-                snapshot.ReferencedRunbooks,
-                snapshot.Findings.Where(x => x.ChecklistItemId == item.ItemId).ToList());
+            var project = await db.Projects
+                .AsNoTracking()
+                .SingleOrDefaultAsync(x => x.Id == checklist.ProjectId, cancellationToken)
+                ?? throw new InvalidOperationException($"检查单所属 Project {checklist.ProjectId} 不存在。");
 
-            ChecklistItemExecutionResult execution;
+            run.Status = RunStatus.Running;
+            await db.SaveChangesAsync(cancellationToken);
+
+            var itemTimeoutSeconds = Math.Max(1, options.Value.AgentItemTimeoutSeconds);
+
+            foreach (var item in snapshot.Items.OrderBy(x => x.SortOrder))
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+
+                var request = new ChecklistItemExecutionRequest(
+                    run.Id,
+                    project.Id,
+                    run.EnvironmentId,
+                    project.OpsContext,
+                    item,
+                    snapshot.GeneralRunbooks,
+                    snapshot.ReferencedRunbooks,
+                    snapshot.Findings.Where(x => x.ChecklistItemId == item.ItemId).ToList());
+
+                var itemStopwatch = Stopwatch.StartNew();
+                ChecklistItemExecutionResult? execution;
+                using var itemTimeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+                itemTimeout.CancelAfter(TimeSpan.FromSeconds(itemTimeoutSeconds));
+                try
+                {
+                    execution = await itemExecutor.ExecuteAsync(request, itemTimeout.Token);
+                }
+                catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+                {
+                    throw;
+                }
+                catch (OperationCanceledException) when (itemTimeout.IsCancellationRequested)
+                {
+                    logger.LogWarning(
+                        "检查项「{Title}」执行超时（{TimeoutSeconds}s，runId={RunId}），记 Error 后继续后续检查项。",
+                        item.Title,
+                        itemTimeoutSeconds,
+                        run.Id);
+                    execution = new ChecklistItemExecutionResult(
+                        Status: CheckResultStatus.Error,
+                        ErrorMessage: $"检查项执行超时（{itemTimeoutSeconds} 秒）。",
+                        DurationMs: itemStopwatch.ElapsedMilliseconds);
+                }
+                catch (Exception ex)
+                {
+                    logger.LogError(
+                        ex,
+                        "检查项「{Title}」执行失败（runId={RunId}），记 Error 后继续后续检查项。",
+                        item.Title,
+                        run.Id);
+                    execution = new ChecklistItemExecutionResult(
+                        Status: CheckResultStatus.Error,
+                        ErrorMessage: ex.Message,
+                        DurationMs: itemStopwatch.ElapsedMilliseconds);
+                }
+
+                itemStopwatch.Stop();
+                execution ??= new ChecklistItemExecutionResult(
+                    Status: CheckResultStatus.Error,
+                    ErrorMessage: "检查项执行器返回了空结果。",
+                    DurationMs: itemStopwatch.ElapsedMilliseconds);
+
+                promptTokens += execution.PromptTokens;
+                completionTokens += execution.CompletionTokens;
+
+                // 每项结束立即落库，不攒到整轮结束（页面可在执行中逐项看到结果）。
+                db.CheckResults.Add(ToCheckResult(run.Id, item.ItemId, execution, itemStopwatch.ElapsedMilliseconds));
+                await db.SaveChangesAsync(cancellationToken);
+            }
+
+            // 全部检查项都产出了结果（含 Error）即视为本轮执行完成；单项错误不改变整轮成功状态。
+            run.Status = RunStatus.Succeeded;
+            run.ErrorMessage = null;
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            run.Status = RunStatus.Canceled;
+            run.ErrorMessage = "执行被取消。";
+            logger.LogInformation("执行 {RunId} 被取消。", checklistRunId);
+        }
+        catch (Exception ex)
+        {
+            run.Status = RunStatus.Failed;
+            run.ErrorMessage = ex.Message;
+            logger.LogError(ex, "执行 {RunId} 失败。", checklistRunId);
+        }
+        finally
+        {
+            stopwatch.Stop();
+            run.CompletedAt = timeProvider.GetUtcNow();
+            run.DurationMs = stopwatch.ElapsedMilliseconds;
+            run.PromptTokens = promptTokens;
+            run.CompletionTokens = completionTokens;
+
+            // 收尾保存不跟随取消令牌，避免取消时丢掉最终状态。
             try
             {
-                execution = await itemExecutor.ExecuteAsync(request, cancellationToken);
+                await db.SaveChangesAsync(CancellationToken.None);
             }
-            catch (Exception ex) when (ex is not OperationCanceledException)
+            catch (Exception ex)
             {
-                logger.LogError(ex, "检查项「{Title}」执行失败（runId={RunId}）", item.Title, run.Id);
-                hasError = true;
-                execution = new ChecklistItemExecutionResult(
-                    Status: CheckResultStatus.Error,
-                    ErrorMessage: ex.Message);
+                logger.LogError(ex, "执行 {RunId} 的终态落库失败。", checklistRunId);
             }
-
-            promptTokens += execution.PromptTokens;
-            completionTokens += execution.CompletionTokens;
-
-            // 每项结束立即落库，不攒到整轮结束（AC7）。
-            db.CheckResults.Add(new CheckResult
-            {
-                ChecklistRunId = run.Id,
-                ChecklistItemId = item.ItemId,
-                Status = execution.Status,
-                AgentVerdict = execution.AgentVerdict,
-                FrameworkVerdict = execution.FrameworkVerdict,
-                RecomputedValue = execution.RecomputedValue,
-                Narrative = execution.Narrative,
-                ObservationsJson = execution.Observations is { Count: > 0 }
-                    ? JsonSerializer.Serialize(execution.Observations, SnapshotJsonOptions)
-                    : null,
-                ToolCallCount = execution.ToolCallCount,
-                Evidence = execution.Evidence,
-                DurationMs = execution.DurationMs,
-                PromptTokens = execution.PromptTokens,
-                CompletionTokens = execution.CompletionTokens,
-                ErrorMessage = execution.ErrorMessage,
-            });
-            await db.SaveChangesAsync(cancellationToken);
         }
 
-        stopwatch.Stop();
-
-        run.CompletedAt = DateTimeOffset.UtcNow;
-        run.DurationMs = stopwatch.ElapsedMilliseconds;
-        run.PromptTokens = promptTokens;
-        run.CompletionTokens = completionTokens;
-
-        // 骨架阶段执行器固定返回 InsufficientEvidence，因此本轮统一标记为未完成执行链路，
-        // 不伪造成功结论；接入真实 agent 后由 TPG-2707 / TPG-2709 决定成功与告警语义。
-        run.Status = RunStatus.Failed;
-        run.ErrorMessage = hasError
-            ? "存在检查项执行错误，详见执行结果。"
-            : "骨架阶段：agent / MCP 执行链路未接入，未产生有效判定。";
-
-        await db.SaveChangesAsync(cancellationToken);
-
         logger.LogInformation(
-            "检查单 {ChecklistId} 在环境 {EnvironmentId} 执行完成（runId={RunId}，{ItemCount} 个检查项，耗时 {ElapsedMs} ms）。",
+            "检查单 {ChecklistId} 在环境 {EnvironmentId} 执行结束（runId={RunId}，状态 {Status}，耗时 {ElapsedMs} ms，token {PromptTokens}+{CompletionTokens}）。",
             checklist.Id,
-            environment.Id,
+            run.EnvironmentId,
             run.Id,
-            snapshot.Items.Count,
-            run.DurationMs);
+            run.Status,
+            run.DurationMs,
+            run.PromptTokens,
+            run.CompletionTokens);
 
-        return run.Id;
+        // 整轮结束后先生成摘要，再做 finding / Lark 判定；两者都是旁路，失败不改变执行终态，
+        // 也不在这里重复实现 finding 状态机（由 TPG-2713 的 IFindingNotifier 负责）。
+        if (run.Status is RunStatus.Succeeded or RunStatus.Failed)
+        {
+            await TrySummarizeAsync(run.Id, cancellationToken);
+            await TryEvaluateFindingsAsync(run.Id, cancellationToken);
+        }
     }
+
+    private async Task TrySummarizeAsync(Guid checklistRunId, CancellationToken cancellationToken)
+    {
+        try
+        {
+            var summaryService = serviceProvider.GetService<IRunSummaryService>();
+            if (summaryService is null)
+            {
+                logger.LogDebug("未注册 IRunSummaryService，跳过执行 {RunId} 的摘要生成。", checklistRunId);
+                return;
+            }
+
+            await summaryService.SummarizeRunAsync(checklistRunId, cancellationToken);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            logger.LogInformation("应用停止，跳过执行 {RunId} 的摘要生成。", checklistRunId);
+        }
+        catch (Exception ex)
+        {
+            // 摘要失败不影响本轮执行结果；AiSummary 由摘要服务自身兜底。
+            logger.LogError(ex, "执行 {RunId} 的摘要生成失败（不改变执行终态）。", checklistRunId);
+        }
+    }
+
+    private async Task TryEvaluateFindingsAsync(Guid checklistRunId, CancellationToken cancellationToken)
+    {
+        try
+        {
+            var findingNotifier = serviceProvider.GetService<IFindingNotifier>();
+            if (findingNotifier is null)
+            {
+                logger.LogDebug("未注册 IFindingNotifier，跳过执行 {RunId} 的 finding 判定。", checklistRunId);
+                return;
+            }
+
+            await findingNotifier.EvaluateRunAsync(checklistRunId, cancellationToken);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            logger.LogInformation("应用停止，跳过执行 {RunId} 的 finding 判定。", checklistRunId);
+        }
+        catch (Exception ex)
+        {
+            // finding / Lark 失败不影响本轮执行结果。
+            logger.LogError(ex, "执行 {RunId} 的 finding 判定失败（不改变执行终态）。", checklistRunId);
+        }
+    }
+
+    private static CheckResult ToCheckResult(
+        Guid runId,
+        Guid checklistItemId,
+        ChecklistItemExecutionResult execution,
+        long elapsedMs)
+        => new()
+        {
+            ChecklistRunId = runId,
+            ChecklistItemId = checklistItemId,
+            Status = execution.Status,
+            AgentVerdict = execution.AgentVerdict,
+            FrameworkVerdict = execution.FrameworkVerdict,
+            RecomputedValue = execution.RecomputedValue,
+            Narrative = execution.Narrative,
+            ObservationsJson = execution.Observations is { Count: > 0 }
+                ? JsonSerializer.Serialize(execution.Observations, ChecklistRunFactory.SnapshotJsonOptions)
+                : null,
+            ToolCallCount = execution.ToolCallCount,
+            Evidence = execution.Evidence,
+            DurationMs = execution.DurationMs > 0 ? execution.DurationMs : elapsedMs,
+            PromptTokens = execution.PromptTokens,
+            CompletionTokens = execution.CompletionTokens,
+            ErrorMessage = execution.ErrorMessage,
+        };
 }
