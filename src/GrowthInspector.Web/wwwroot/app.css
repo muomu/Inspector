@@ -110,6 +110,20 @@ table.data td.actions {
     font-size: 1.5rem;
 }
 
+.stat-grid.compact {
+    grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+    gap: 8px;
+    margin-top: 8px;
+}
+
+.stat-grid.compact .stat-card {
+    padding: 10px 12px;
+}
+
+.stat-grid.compact .stat-card strong {
+    font-size: 1.15rem;
+}
+
 .panel {
     border: 1px solid #e0e5ea;
     border-radius: 8px;

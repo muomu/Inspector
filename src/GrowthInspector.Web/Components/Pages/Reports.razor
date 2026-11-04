@@ -2,12 +2,14 @@
 @rendermode InteractiveServer
 @inject IDbContextFactory<GrowthInspectorDbContext> DbFactory
 @inject DailyReportService ReportService
+@using System.Text.Json
 
 <PageTitle>日报 · Growth Inspector</PageTitle>
 
 <h1>巡检日报</h1>
 <p class="page-subtitle">
-    每天 10:00 生成并发送（骨架：生成与落库已接，Lark 发送与 AI 摘要由 TPG-2714 / TPG-2711 接入）。
+    每天 10:00 生成一份 AiSummary(DailyReport)，发送留痕写入 LarkNotification（v1 走 mock 通道）。
+    每份日报下方给出当日执行状态与观察项统计，便于把摘要内容与真实数据对照。
 </p>
 
 <div class="form-row">
@@ -15,24 +17,181 @@
     <span class="muted">@statusMessage</span>
 </div>
 
-@if (summaries.Count == 0)
+@if (loadError is not null)
 {
-    <div class="empty">还没有日报。点击上方按钮，会用当前运行数据生成一份（示例数据）。</div>
+    <p class="error-text">加载失败：@loadError</p>
+}
+
+<h2 class="section-title">最近日报发送留痕</h2>
+@if (recentNotifications.Count == 0)
+{
+    <p class="muted">还没有 DailyReport 类型的 LarkNotification；日报发送链路由日报任务接入后写入。</p>
 }
 else
 {
-    @foreach (var summary in summaries)
+    <div class="table-scroll">
+        <table class="data wide">
+            <thead>
+                <tr>
+                    <th>发送时间</th>
+                    <th>项目</th>
+                    <th>通道</th>
+                    <th>结果</th>
+                    <th>失败原因</th>
+                    <th>报文预览</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var notice in recentNotifications)
+                {
+                    <tr>
+                        <td class="narrow-num">@notice.Notification.CreatedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss")</td>
+                        <td>
+                            @(string.IsNullOrWhiteSpace(notice.ProjectName) ? "(已归档/已删除)" : notice.ProjectName)
+                            @if (notice.ProjectArchived)
+                            {
+                                <span class="badge archived">已归档</span>
+                            }
+                        </td>
+                        <td>
+                            @if (notice.Notification.IsMock)
+                            {
+                                <span class="badge status-canceled">mock</span>
+                            }
+                            else
+                            {
+                                <span class="badge status-running">真实发送</span>
+                            }
+                        </td>
+                        <td>
+                            @if (notice.Notification.Succeeded)
+                            {
+                                <span class="badge status-succeeded">成功</span>
+                            }
+                            else
+                            {
+                                <span class="badge status-failed">失败</span>
+                            }
+                        </td>
+                        <td>@(notice.Notification.ErrorMessage ?? "-")</td>
+                        <td class="cell-json">
+                            @if (string.IsNullOrWhiteSpace(notice.Notification.PayloadJson))
+                            {
+                                <span class="muted">-</span>
+                            }
+                            else
+                            {
+                                <details>
+                                    <summary>@Shorten(notice.Notification.PayloadJson, 80)</summary>
+                                    <pre>@notice.Notification.PayloadJson</pre>
+                                </details>
+                            }
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+}
+
+<h2 class="section-title">最近日报</h2>
+@if (reports.Count == 0)
+{
+    <div class="empty">还没有日报。点击上方按钮会用当前数据生成一份；每日 10:00 的自动生成与 Lark 发送由日报任务接入。</div>
+}
+else
+{
+    @foreach (var report in reports)
     {
-        <div class="panel">
+        var summary = report.Summary;
+        <section class="panel">
             <h2>@ReportDateText(summary)</h2>
-            <p class="muted">生成于 @summary.CreatedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss")</p>
+            <p class="muted">
+                生成于 @summary.CreatedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss")
+                ｜token @(summary.PromptTokens + summary.CompletionTokens)（@summary.PromptTokens / @summary.CompletionTokens）
+                ｜耗时 @FormatDuration(summary.DurationMs)
+                @if (!string.IsNullOrWhiteSpace(summary.Model))
+                {
+                    <text>｜模型 @summary.Model</text>
+                }
+            </p>
+            <div class="inline-badges">
+                @if (summary.FallbackUsed)
+                {
+                    <span class="badge status-canceled">模板兜底（LLM 故障，不编造结论）</span>
+                }
+                else
+                {
+                    <span class="badge status-succeeded">非模板兜底</span>
+                }
+            </div>
+
+            <h3 class="subsection-title">当日执行与观察项统计</h3>
+            <div class="stat-grid compact">
+                <div class="stat-card"><span>执行轮次</span><strong>@report.Stats.RunCount</strong></div>
+                <div class="stat-card"><span>成功</span><strong>@report.Stats.Succeeded</strong></div>
+                <div class="stat-card"><span>失败</span><strong>@report.Stats.Failed</strong></div>
+                <div class="stat-card"><span>Skipped</span><strong>@report.Stats.Skipped</strong></div>
+                <div class="stat-card"><span>Canceled</span><strong>@report.Stats.Canceled</strong></div>
+                <div class="stat-card"><span>观察项</span><strong>@report.Stats.ObservationCount</strong></div>
+            </div>
+
+            <h3 class="subsection-title">Lark 发送状态（LarkNotification · DailyReport）</h3>
+            @if (report.Notifications.Count == 0)
+            {
+                <p class="muted">该日报日期没有匹配到 Lark 发送留痕（最近的发送状态见页面顶部）。</p>
+            }
+            else
+            {
+                var latest = report.Notifications[0];
+                <div class="inline-badges">
+                    <span class="muted">共 @report.Notifications.Count 条</span>
+                    @if (latest.Notification.IsMock)
+                    {
+                        <span class="badge status-canceled">mock</span>
+                    }
+                    else
+                    {
+                        <span class="badge status-running">真实发送</span>
+                    }
+                    @if (latest.Notification.Succeeded)
+                    {
+                        <span class="badge status-succeeded">成功</span>
+                    }
+                    else
+                    {
+                        <span class="badge status-failed">失败</span>
+                    }
+                    <span class="muted">@latest.Notification.CreatedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss")</span>
+                    @if (!string.IsNullOrWhiteSpace(latest.Notification.ErrorMessage))
+                    {
+                        <span class="muted">· @latest.Notification.ErrorMessage</span>
+                    }
+                </div>
+            }
+
+            <h3 class="subsection-title">日报内容</h3>
             <pre class="report">@summary.Content</pre>
-        </div>
+        </section>
     }
 }
 
 @code {
-    private List<AiSummary> summaries = [];
+    private sealed record DayStats(
+        int RunCount,
+        int Succeeded,
+        int Failed,
+        int Skipped,
+        int Canceled,
+        int ObservationCount);
+
+    private sealed record NoticeView(LarkNotification Notification, string? ProjectName, bool ProjectArchived);
+
+    private sealed record ReportView(AiSummary Summary, DayStats Stats, List<NoticeView> Notifications);
+
+    private List<ReportView> reports = [];
+    private List<NoticeView> recentNotifications = [];
+    private string? loadError;
     private string? statusMessage;
 
     protected override async Task OnInitializedAsync()
@@ -42,13 +201,104 @@ else
 
     private async Task ReloadAsync()
     {
-        await using var db = await DbFactory.CreateDbContextAsync();
-        summaries = await db.AiSummaries
-            .Where(x => x.Kind == AiSummaryKind.DailyReport)
-            .OrderByDescending(x => x.CreatedAt)
-            .Take(10)
-            .AsNoTracking()
-            .ToListAsync();
+        loadError = null;
+        try
+        {
+            await using var db = await DbFactory.CreateDbContextAsync();
+
+            var summaries = await db.AiSummaries
+                .Where(x => x.Kind == AiSummaryKind.DailyReport)
+                .OrderByDescending(x => x.CreatedAt)
+                .Take(10)
+                .AsNoTracking()
+                .ToListAsync();
+
+            var dailyNotifications = await db.LarkNotifications
+                .Where(x => x.Kind == LarkNotificationKind.DailyReport)
+                .OrderByDescending(x => x.CreatedAt)
+                .Take(50)
+                .AsNoTracking()
+                .ToListAsync();
+
+            var projectIds = dailyNotifications.Select(x => x.ProjectId).Distinct().ToList();
+            var projects = await db.Projects
+                .Where(x => projectIds.Contains(x.Id))
+                .Select(x => new { x.Id, x.Name, x.IsArchived })
+                .AsNoTracking()
+                .ToListAsync();
+            var projectMap = projects.ToDictionary(x => x.Id);
+
+            var notices = dailyNotifications
+                .Select(notification =>
+                {
+                    var project = projectMap.GetValueOrDefault(notification.ProjectId);
+                    return new NoticeView(notification, project?.Name, project?.IsArchived ?? false);
+                })
+                .ToList();
+            recentNotifications = notices.Take(5).ToList();
+
+            if (summaries.Count == 0)
+            {
+                reports = [];
+                return;
+            }
+
+            var reportDates = summaries.Select(ReportDateOf).Distinct().ToList();
+            var windowStart = DayStartUtc(reportDates.Min());
+            var windowEnd = DayStartUtc(reportDates.Max()).AddDays(1);
+
+            var runs = await db.ChecklistRuns
+                .Where(x => x.StartedAt >= windowStart && x.StartedAt < windowEnd)
+                .Select(x => new { x.Id, x.Status, x.StartedAt })
+                .AsNoTracking()
+                .ToListAsync();
+
+            var runIds = runs.Select(x => x.Id).ToList();
+            var observations = await db.CheckResults
+                .Where(x => runIds.Contains(x.ChecklistRunId) && x.ObservationsJson != null)
+                .Select(x => new { x.ChecklistRunId, x.ObservationsJson })
+                .AsNoTracking()
+                .ToListAsync();
+
+            var runDates = runs.ToDictionary(x => x.Id, x => DateOnly.FromDateTime(x.StartedAt.UtcDateTime));
+            var observationsByDate = new Dictionary<DateOnly, int>();
+            foreach (var row in observations)
+            {
+                if (row.ObservationsJson is null || !runDates.TryGetValue(row.ChecklistRunId, out var runDate))
+                {
+                    continue;
+                }
+
+                observationsByDate[runDate] = observationsByDate.GetValueOrDefault(runDate)
+                    + CountObservations(row.ObservationsJson);
+            }
+
+            reports = summaries.Select(summary =>
+            {
+                var reportDate = ReportDateOf(summary);
+                var dayRuns = runs
+                    .Where(x => DateOnly.FromDateTime(x.StartedAt.UtcDateTime) == reportDate)
+                    .ToList();
+
+                var stats = new DayStats(
+                    dayRuns.Count,
+                    dayRuns.Count(x => x.Status == RunStatus.Succeeded),
+                    dayRuns.Count(x => x.Status == RunStatus.Failed),
+                    dayRuns.Count(x => x.Status == RunStatus.Skipped),
+                    dayRuns.Count(x => x.Status == RunStatus.Canceled),
+                    observationsByDate.GetValueOrDefault(reportDate));
+
+                var matchedNotices = notices
+                    .Where(x => DateOnly.FromDateTime(x.Notification.CreatedAt.UtcDateTime) == reportDate)
+                    .ToList();
+
+                return new ReportView(summary, stats, matchedNotices);
+            }).ToList();
+        }
+        catch (Exception ex)
+        {
+            loadError = ex.Message;
+        }
     }
 
     private async Task GenerateAsync()
@@ -67,6 +317,52 @@ else
         }
     }
 
+    private static DateOnly ReportDateOf(AiSummary summary)
+        => summary.ReportDate ?? DateOnly.FromDateTime(summary.CreatedAt.UtcDateTime);
+
+    private static DateTimeOffset DayStartUtc(DateOnly date)
+        => new(date.ToDateTime(TimeOnly.MinValue), TimeSpan.Zero);
+
+    private static int CountObservations(string? observationsJson)
+    {
+        if (string.IsNullOrWhiteSpace(observationsJson))
+        {
+            return 0;
+        }
+
+        try
+        {
+            var observations = JsonSerializer.Deserialize<List<string>>(observationsJson);
+            if (observations is not null)
+            {
+                return observations.Count;
+            }
+        }
+        catch (JsonException)
+        {
+            // 非法 JSON 时按一条观察项计，避免把已有数据当成零。
+        }
+
+        return 1;
+    }
+
     private static string ReportDateText(AiSummary summary)
         => summary.ReportDate is { } date ? $"{date:yyyy-MM-dd} 日报" : "日报";
+
+    private static string FormatDuration(long milliseconds) => milliseconds switch
+    {
+        <= 0 => "-",
+        < 1000 => $"{milliseconds} ms",
+        _ => $"{milliseconds / 1000d:0.0} s",
+    };
+
+    private static string Shorten(string? value, int maxLength)
+    {
+        if (string.IsNullOrEmpty(value))
+        {
+            return "-";
+        }
+
+        return value.Length <= maxLength ? value : value[..maxLength] + "…";
+    }
 }
