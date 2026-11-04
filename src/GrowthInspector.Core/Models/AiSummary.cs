@@ -18,9 +18,17 @@ public sealed class AiSummary
     /// <summary>Markdown 正文。</summary>
     public string Content { get; set; } = string.Empty;
 
+    /// <summary>生成使用的模型名。</summary>
+    public string? Model { get; set; }
+
+    /// <summary>是否因 LLM 故障使用了模板兜底（不编造结论）。</summary>
+    public bool FallbackUsed { get; set; }
+
     public int PromptTokens { get; set; }
 
     public int CompletionTokens { get; set; }
+
+    public long DurationMs { get; set; }
 
     public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
 }

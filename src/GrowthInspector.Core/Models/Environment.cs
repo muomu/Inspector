@@ -14,5 +14,8 @@ public sealed class Environment
     /// <summary>是否为项目默认环境。</summary>
     public bool IsDefault { get; set; }
 
+    /// <summary>归档标记。</summary>
+    public bool IsArchived { get; set; }
+
     public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
 }

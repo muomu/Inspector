@@ -17,3 +17,6 @@ logs/
 
 # 临时文件
 .tmp/
+
+# 多 agent 并行开发用的 worktree（各子任务在独立 checkout 内工作）
+.claude/worktrees/

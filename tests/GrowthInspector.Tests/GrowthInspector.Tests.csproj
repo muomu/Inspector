@@ -22,7 +22,10 @@
     <ProjectReference Include="..\..\src\GrowthInspector.Agents\GrowthInspector.Agents.csproj" />
     <ProjectReference Include="..\..\src\GrowthInspector.Core\GrowthInspector.Core.csproj" />
     <ProjectReference Include="..\..\src\GrowthInspector.Data\GrowthInspector.Data.csproj" />
+    <ProjectReference Include="..\..\src\GrowthInspector.Management\GrowthInspector.Management.csproj" />
+    <ProjectReference Include="..\..\src\GrowthInspector.Notifications\GrowthInspector.Notifications.csproj" />
     <ProjectReference Include="..\..\src\GrowthInspector.Orchestration\GrowthInspector.Orchestration.csproj" />
+    <ProjectReference Include="..\..\src\GrowthInspector.Web\GrowthInspector.Web.csproj" />
   </ItemGroup>
 
 </Project>

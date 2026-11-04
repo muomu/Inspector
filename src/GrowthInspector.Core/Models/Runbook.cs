@@ -14,8 +14,13 @@ public sealed class Runbook
 
     public string Title { get; set; } = string.Empty;
 
+    /// <summary>手册类别：通用自动注入，专用检索 / 引用后注入。</summary>
+    public RunbookKind Kind { get; set; } = RunbookKind.Specialized;
+
     /// <summary>Markdown 正文。</summary>
     public string Body { get; set; } = string.Empty;
+
+    public bool IsArchived { get; set; }
 
     public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
 

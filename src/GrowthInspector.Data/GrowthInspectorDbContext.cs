@@ -33,6 +33,8 @@ public sealed class GrowthInspectorDbContext(DbContextOptions<GrowthInspectorDbC
 
     public DbSet<McpServer> McpServers => Set<McpServer>();
 
+    public DbSet<LarkNotification> LarkNotifications => Set<LarkNotification>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         ConfigureDateTimeOffsetConversions(modelBuilder);
@@ -48,6 +50,7 @@ public sealed class GrowthInspectorDbContext(DbContextOptions<GrowthInspectorDbC
         ConfigureAiSummaries(modelBuilder);
         ConfigureToolCallLogs(modelBuilder);
         ConfigureMcpServers(modelBuilder);
+        ConfigureLarkNotifications(modelBuilder);
     }
 
     private static void ConfigureDateTimeOffsetConversions(ModelBuilder modelBuilder)
@@ -103,8 +106,9 @@ public sealed class GrowthInspectorDbContext(DbContextOptions<GrowthInspectorDbC
             entity.ToTable("Runbooks");
             entity.HasKey(x => x.Id);
             entity.Property(x => x.Title).IsRequired().HasMaxLength(200);
+            entity.Property(x => x.Kind).HasConversion<string>().HasMaxLength(20);
             entity.Property(x => x.Body).IsRequired();
-            entity.HasIndex(x => x.ProjectId);
+            entity.HasIndex(x => new { x.ProjectId, x.Kind, x.IsArchived });
             entity.HasOne(x => x.Project)
                 .WithMany(x => x.Runbooks)
                 .HasForeignKey(x => x.ProjectId)
@@ -136,7 +140,9 @@ public sealed class GrowthInspectorDbContext(DbContextOptions<GrowthInspectorDbC
             entity.HasKey(x => x.Id);
             entity.Property(x => x.Title).IsRequired().HasMaxLength(300);
             entity.Property(x => x.Severity).HasConversion<string>().HasMaxLength(20);
+            entity.Property(x => x.Operator).HasConversion<string>().HasMaxLength(20);
             entity.HasIndex(x => new { x.ChecklistId, x.SortOrder });
+            entity.HasIndex(x => new { x.ChecklistId, x.IsArchived });
             entity.HasOne(x => x.Checklist)
                 .WithMany(x => x.Items)
                 .HasForeignKey(x => x.ChecklistId)
@@ -168,8 +174,10 @@ public sealed class GrowthInspectorDbContext(DbContextOptions<GrowthInspectorDbC
             entity.ToTable("ChecklistRuns");
             entity.HasKey(x => x.Id);
             entity.Property(x => x.Status).HasConversion<string>().HasMaxLength(20);
+            entity.Property(x => x.Trigger).HasConversion<string>().HasMaxLength(20);
             entity.Property(x => x.SnapshotJson).IsRequired();
             entity.HasIndex(x => new { x.ChecklistId, x.StartedAt });
+            entity.HasIndex(x => new { x.Status, x.StartedAt });
             entity.HasOne(x => x.Checklist)
                 .WithMany()
                 .HasForeignKey(x => x.ChecklistId)
@@ -188,6 +196,8 @@ public sealed class GrowthInspectorDbContext(DbContextOptions<GrowthInspectorDbC
             entity.ToTable("CheckResults");
             entity.HasKey(x => x.Id);
             entity.Property(x => x.Status).HasConversion<string>().HasMaxLength(30);
+            entity.Property(x => x.AgentVerdict).HasConversion<string>().HasMaxLength(30);
+            entity.Property(x => x.FrameworkVerdict).HasConversion<string>().HasMaxLength(30);
             entity.HasIndex(x => new { x.ChecklistRunId, x.ChecklistItemId }).IsUnique();
             entity.HasOne(x => x.ChecklistRun)
                 .WithMany(x => x.Results)
@@ -210,6 +220,7 @@ public sealed class GrowthInspectorDbContext(DbContextOptions<GrowthInspectorDbC
             entity.Property(x => x.Title).IsRequired().HasMaxLength(300);
             entity.Property(x => x.Severity).HasConversion<string>().HasMaxLength(20);
             entity.Property(x => x.Status).HasConversion<string>().HasMaxLength(20);
+            entity.Property(x => x.CloseReason).HasConversion<string>().HasMaxLength(20);
             entity.HasIndex(x => x.DedupKey).IsUnique();
             entity.HasIndex(x => new { x.EnvironmentId, x.Status });
             entity.HasOne<Project>().WithMany().HasForeignKey(x => x.ProjectId).OnDelete(DeleteBehavior.Restrict);
@@ -243,7 +254,9 @@ public sealed class GrowthInspectorDbContext(DbContextOptions<GrowthInspectorDbC
             entity.ToTable("ToolCallLogs");
             entity.HasKey(x => x.Id);
             entity.Property(x => x.ToolName).IsRequired().HasMaxLength(200);
+            entity.Property(x => x.AgentRole).HasConversion<string>().HasMaxLength(20);
             entity.HasIndex(x => new { x.ChecklistRunId, x.CreatedAt });
+            entity.HasIndex(x => new { x.ChecklistRunId, x.ChecklistItemId });
             entity.HasOne(x => x.ChecklistRun)
                 .WithMany(x => x.ToolCalls)
                 .HasForeignKey(x => x.ChecklistRunId)
@@ -268,6 +281,27 @@ public sealed class GrowthInspectorDbContext(DbContextOptions<GrowthInspectorDbC
                 .WithMany()
                 .HasForeignKey(x => x.EnvironmentId)
                 .OnDelete(DeleteBehavior.Restrict);
+        });
+    }
+
+    private static void ConfigureLarkNotifications(ModelBuilder modelBuilder)
+    {
+        modelBuilder.Entity<LarkNotification>(entity =>
+        {
+            entity.ToTable("LarkNotifications");
+            entity.HasKey(x => x.Id);
+            entity.Property(x => x.Kind).HasConversion<string>().HasMaxLength(30);
+            entity.Property(x => x.PayloadJson).IsRequired();
+            entity.HasIndex(x => new { x.ProjectId, x.CreatedAt });
+            entity.HasIndex(x => new { x.Kind, x.CreatedAt });
+            entity.HasOne(x => x.Project)
+                .WithMany()
+                .HasForeignKey(x => x.ProjectId)
+                .OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne(x => x.ChecklistRun)
+                .WithMany()
+                .HasForeignKey(x => x.ChecklistRunId)
+                .OnDelete(DeleteBehavior.Cascade);
         });
     }
 }

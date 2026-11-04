@@ -6,6 +6,7 @@
     <ProjectReference Include="..\GrowthInspector.Agents\GrowthInspector.Agents.csproj" />
     <ProjectReference Include="..\GrowthInspector.Orchestration\GrowthInspector.Orchestration.csproj" />
     <ProjectReference Include="..\GrowthInspector.Notifications\GrowthInspector.Notifications.csproj" />
+    <ProjectReference Include="..\GrowthInspector.Management\GrowthInspector.Management.csproj" />
   </ItemGroup>
 
   <PropertyGroup>

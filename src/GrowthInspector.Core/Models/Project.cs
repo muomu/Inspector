@@ -17,6 +17,9 @@ public sealed class Project
     /// <summary>项目级运维上下文（Markdown），会随手册一并交给 agent。</summary>
     public string? OpsContext { get; set; }
 
+    /// <summary>归档标记（v1 删除语义只有归档，无硬删 / 回收站）。</summary>
+    public bool IsArchived { get; set; }
+
     public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
 
     public ICollection<Environment> Environments { get; set; } = new List<Environment>();

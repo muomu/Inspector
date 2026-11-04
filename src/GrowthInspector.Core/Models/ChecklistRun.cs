@@ -13,8 +13,11 @@ public sealed class ChecklistRun
 
     public Environment? Environment { get; set; }
 
-    /// <summary>执行时的检查单快照（含引用手册全文），JSON。</summary>
+    /// <summary>执行时的检查单快照（含通用 / 引用专用手册全文），JSON。</summary>
     public string SnapshotJson { get; set; } = "{}";
+
+    /// <summary>本轮触发来源：调度或手动。</summary>
+    public ChecklistTrigger Trigger { get; set; } = ChecklistTrigger.Manual;
 
     public RunStatus Status { get; set; } = RunStatus.Pending;
 

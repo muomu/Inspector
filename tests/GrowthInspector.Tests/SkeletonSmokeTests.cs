@@ -57,10 +57,19 @@ public sealed class SkeletonSmokeTests : IDisposable
             project = new Project { Name = "示例项目", Code = "demo" };
             project.Environments.Add(new Environment { Name = "prod", IsDefault = true });
 
-            var runbook = new Runbook
+            var generalRunbook = new Runbook
             {
-                Title = "示例手册",
-                Body = "# 示例手册\n\n指标语义与排查经验。",
+                Title = "通用手册",
+                Kind = RunbookKind.General,
+                Body = "# 通用手册\n\n技术栈与指标语义。",
+                Project = project,
+            };
+
+            var specializedRunbook = new Runbook
+            {
+                Title = "专用手册",
+                Kind = RunbookKind.Specialized,
+                Body = "# 专用手册\n\n具体排查 playbook。",
                 Project = project,
             };
 
@@ -75,12 +84,19 @@ public sealed class SkeletonSmokeTests : IDisposable
             {
                 Title = "判定型检查项",
                 SortOrder = 1,
-                Threshold = "< 500",
+                ToolName = "mock__QueryMetric",
+                ArgumentsTemplate = "{\"metric\":\"http_p99_latency_ms\",\"window\":\"1h\"}",
+                ValuePath = "$.value",
+                Operator = ComparisonOperator.Lt,
+                Threshold = "500",
+                Window = "1h",
                 Severity = Severity.Critical,
+                RuleVersion = 1,
             });
-            checklist.RunbookRefs.Add(new ChecklistRunbookRef { Runbook = runbook });
+            checklist.RunbookRefs.Add(new ChecklistRunbookRef { Runbook = specializedRunbook });
 
             db.Projects.Add(project);
+            db.Runbooks.Add(generalRunbook);
             db.Checklists.Add(checklist);
             await db.SaveChangesAsync();
         }
@@ -102,7 +118,9 @@ public sealed class SkeletonSmokeTests : IDisposable
             new JsonSerializerOptions(JsonSerializerDefaults.Web));
         Assert.NotNull(snapshot);
         Assert.Equal(2, snapshot!.Items.Count);
-        Assert.Single(snapshot.Runbooks);
+        Assert.Single(snapshot.GeneralRunbooks);
+        Assert.Single(snapshot.ReferencedRunbooks);
+        Assert.Equal(ChecklistTrigger.Manual, snapshot.Trigger);
     }
 
     public void Dispose()

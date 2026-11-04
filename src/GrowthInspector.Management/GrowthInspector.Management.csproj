@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- 管理 MCP server 依赖 ASP.NET Core（MapMcp / Streamable HTTP），由 TPG-2712 接入。 -->
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+    <PackageReference Include="ModelContextProtocol.AspNetCore" Version="2.3.1" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\GrowthInspector.Core\GrowthInspector.Core.csproj" />
+    <ProjectReference Include="..\GrowthInspector.Data\GrowthInspector.Data.csproj" />
+  </ItemGroup>
+
+</Project>

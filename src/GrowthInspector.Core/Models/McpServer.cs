@@ -31,6 +31,9 @@ public sealed class McpServer
 
     public bool IsEnabled { get; set; } = true;
 
+    /// <summary>归档标记。</summary>
+    public bool IsArchived { get; set; }
+
     public int TimeoutSeconds { get; set; } = 60;
 
     /// <summary>工具结果入库的单条截断上限（字节），默认 8 KB。</summary>

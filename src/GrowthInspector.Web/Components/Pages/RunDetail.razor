@@ -107,11 +107,11 @@ else
     else
     {
         <p class="muted">
-            检查项 @snapshot.Items.Count 个；引用的手册 @snapshot.Runbooks.Count 份（执行时固化的全文如下）。
+            检查项 @snapshot.Items.Count 个；通用手册 @snapshot.GeneralRunbooks.Count 份、被引用专用手册 @snapshot.ReferencedRunbooks.Count 份（执行时固化的全文如下）。
         </p>
-        @foreach (var runbook in snapshot.Runbooks)
+        @foreach (var runbook in snapshot.GeneralRunbooks.Concat(snapshot.ReferencedRunbooks))
         {
-            <h3>@runbook.Title</h3>
+            <h3>@runbook.Title <span class="badge">@runbook.Kind</span></h3>
             <pre class="snapshot">@runbook.Body</pre>
         }
     }

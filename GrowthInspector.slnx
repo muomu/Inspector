@@ -3,6 +3,7 @@
     <Project Path="src/GrowthInspector.Agents/GrowthInspector.Agents.csproj" />
     <Project Path="src/GrowthInspector.Core/GrowthInspector.Core.csproj" />
     <Project Path="src/GrowthInspector.Data/GrowthInspector.Data.csproj" />
+    <Project Path="src/GrowthInspector.Management/GrowthInspector.Management.csproj" />
     <Project Path="src/GrowthInspector.Notifications/GrowthInspector.Notifications.csproj" />
     <Project Path="src/GrowthInspector.Orchestration/GrowthInspector.Orchestration.csproj" />
     <Project Path="src/GrowthInspector.Web/GrowthInspector.Web.csproj" />

@@ -20,6 +20,9 @@ public sealed class Checklist
 
     public bool IsEnabled { get; set; } = true;
 
+    /// <summary>归档标记：归档后不参与调度、不进入快照。</summary>
+    public bool IsArchived { get; set; }
+
     public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
 
     public DateTimeOffset UpdatedAt { get; set; } = DateTimeOffset.UtcNow;

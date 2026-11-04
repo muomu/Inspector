@@ -2,6 +2,7 @@ using GrowthInspector.Agents;
 using GrowthInspector.Core.Abstractions;
 using GrowthInspector.Core.Options;
 using GrowthInspector.Data;
+using GrowthInspector.Management;
 using GrowthInspector.Notifications;
 using GrowthInspector.Orchestration;
 using GrowthInspector.Web.Components;
@@ -34,6 +35,7 @@ var deepSeekOptions = builder.Configuration
 builder.Services.AddGrowthInspectorAgents(deepSeekOptions);
 builder.Services.AddGrowthInspectorOrchestration();
 builder.Services.AddGrowthInspectorNotifications();
+builder.Services.AddGrowthInspectorManagement(builder.Configuration);
 
 builder.Services.AddScoped<IDailyReportGenerator, DailyReportGenerator>();
 builder.Services.AddScoped<DailyReportService>();
@@ -53,6 +55,9 @@ app.UseAntiforgery();
 app.MapStaticAssets();
 app.MapRazorComponents<App>()
     .AddInteractiveServerRenderMode();
+
+// 管理 MCP server：Streamable HTTP，挂在主进程上（仅 loopback；工具面由 TPG-2712 提供）。
+app.MapGrowthInspectorManagementMcp();
 
 // 本地工具：启动时自动建库（EnsureCreated），不做迁移。
 await app.Services.EnsureGrowthInspectorDatabaseAsync();
