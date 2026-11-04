@@ -328,10 +328,9 @@ public sealed class AgentToolBaseTests : IDisposable
         var mcpCall = Assert.Single(invoker.Calls);
         Assert.Equal(server.Id, mcpCall.McpServerId);
         Assert.Equal("QueryMetric", mcpCall.ToolName);
-        Assert.NotNull(mcpCall.Context);
-        Assert.Equal(seed.Run.Id, mcpCall.Context!.ChecklistRunId);
-        Assert.Equal(seed.Item.Id, mcpCall.Context.ChecklistItemId);
-        Assert.Equal(AgentRole.Execution, mcpCall.Context.AgentRole);
+        Assert.NotNull(mcpCall);
+        // 审计由工具基座统一写入：MCP client 不再重复落 ToolCallLog，因此这里不传审计上下文。
+        Assert.Null(mcpCall.Context);
         Assert.True(mcpResult.Truncated is false);
 
         await using var db = await database.Factory.CreateDbContextAsync();

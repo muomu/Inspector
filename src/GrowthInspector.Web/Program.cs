@@ -28,6 +28,9 @@ builder.Services.AddRazorComponents()
 
 builder.Services.AddGrowthInspectorData(sqlitePath);
 
+// 执行侧审计留存清理：按 Inspector:AuditRetentionDays 定时清理过期执行数据（TPG-2705）。
+builder.Services.AddGrowthInspectorAuditPruning();
+
 var deepSeekOptions = builder.Configuration
     .GetSection(DeepSeekOptions.SectionName)
     .Get<DeepSeekOptions>() ?? new DeepSeekOptions();

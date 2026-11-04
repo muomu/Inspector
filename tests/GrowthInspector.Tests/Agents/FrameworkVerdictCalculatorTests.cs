@@ -262,7 +262,8 @@ public sealed class FrameworkVerdictCalculatorTests
         => new()
         {
             ChecklistRunId = Guid.NewGuid(),
-            ChecklistItemId = Guid.NewGuid(),
+            // 未落检查项 Id 的历史日志：复核回退到「同工具最近一条」的兼容路径。
+            ChecklistItemId = null,
             AgentRole = role,
             ToolName = toolName,
             Result = result,

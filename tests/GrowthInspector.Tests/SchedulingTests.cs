@@ -403,12 +403,21 @@ public sealed class SchedulingTests
 
             Assert.Equal(RunStatus.Succeeded, status);
 
+            // 摘要与 finding 是终态落库之后的旁路，异步完成；等待其写入后再断言。
+            var summaryCount = 0;
+            for (var attempt = 0; attempt < 100 && summaryCount == 0; attempt++)
+            {
+                await Task.Delay(50);
+                await using var summaryDb = await host.DbFactory.CreateDbContextAsync();
+                summaryCount = await summaryDb.AiSummaries.CountAsync(x => x.ChecklistRunId == runId);
+            }
+
             await using var verifyDb = await host.DbFactory.CreateDbContextAsync();
             var run = await verifyDb.ChecklistRuns
                 .Include(x => x.Results)
                 .SingleAsync(x => x.Id == runId);
             Assert.Equal(2, run.Results.Count);
-            Assert.Equal(1, await verifyDb.AiSummaries.CountAsync(x => x.ChecklistRunId == runId));
+            Assert.Equal(1, summaryCount);
         }
         finally
         {

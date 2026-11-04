@@ -97,16 +97,13 @@ public sealed class AgentToolset(
     {
         try
         {
-            var invocationContext = new McpToolInvocationContext(
-                context.ChecklistRunId,
-                context.ChecklistItemId,
-                context.AgentRole);
-
+            // 审计由工具基座统一写入（见外层 InvokeAsync 的 ToolCallAuditor 调用）；
+            // 这里不传 McpToolInvocationContext，避免 MCP client 再写一条重复的 ToolCallLog。
             var mcpResult = await mcpToolInvoker.CallToolAsync(
                 entry.McpServerId!.Value,
                 entry.McpToolName!,
                 argumentsJson,
-                invocationContext,
+                context: null,
                 cancellationToken);
 
             if (mcpResult.Succeeded)

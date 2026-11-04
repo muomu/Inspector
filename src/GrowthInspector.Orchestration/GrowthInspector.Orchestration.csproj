@@ -7,7 +7,7 @@
 
   <ItemGroup>
     <!-- 后台队列 worker（BackgroundService / IHostedService）。 -->
-    <PackageReference Include="Microsoft.Extensions.Hosting.Abstractions" Version="10.0.8" />
+    <PackageReference Include="Microsoft.Extensions.Hosting.Abstractions" Version="10.0.13" />
     <!-- IOptions / ILogger / DI 抽象：编排层直接依赖配置与日志。 -->
     <PackageReference Include="Microsoft.Extensions.Options" Version="10.0.14" />
     <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.14" />

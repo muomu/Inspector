@@ -44,7 +44,11 @@ public static class FrameworkVerdictCalculator
             .Where(log => log.AgentRole == AgentRole.Execution
                 && log.Succeeded
                 && string.Equals(log.ToolName, item.ToolName, StringComparison.Ordinal))
-            .OrderByDescending(log => log.CreatedAt)
+            // 同一轮里多个检查项可能调用同一工具：优先取本检查项自己的调用记录，
+            // 兼容未落 ChecklistItemId 的历史记录时再回退到本项范围内最近一条。
+            .Where(log => log.ChecklistItemId == item.ItemId || log.ChecklistItemId is null)
+            .OrderByDescending(log => log.ChecklistItemId == item.ItemId)
+            .ThenByDescending(log => log.CreatedAt)
             .FirstOrDefault();
 
         if (candidate is null)

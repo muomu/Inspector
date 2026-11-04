@@ -128,7 +128,8 @@ public sealed class SkeletonSmokeTests : IDisposable
 
     public void Dispose()
     {
-        serviceProvider.Dispose();
+        // 服务提供者含仅实现 IAsyncDisposable 的单例（如 MCP 工具调用器），必须异步释放。
+        serviceProvider.DisposeAsync().AsTask().GetAwaiter().GetResult();
         if (File.Exists(databasePath))
         {
             File.Delete(databasePath);

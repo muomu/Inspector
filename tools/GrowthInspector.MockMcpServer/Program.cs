@@ -47,7 +47,7 @@ builder.Services
             new McpServerToolCreateOptions
             {
                 Name = "GetServiceHealth",
-                Description = "查询服务健康状态，返回 {service,status}，status 为 up 或 down。",
+                Description = "查询服务健康状态，返回 {service,status}；status 为 healthy / degraded / up / down。",
             }),
     ]);
 
@@ -102,10 +102,17 @@ internal static class MockTools
 
     public static string GetServiceHealth(string service)
     {
-        var status = service.Equals("database", StringComparison.OrdinalIgnoreCase)
-            || service.Equals("payment", StringComparison.OrdinalIgnoreCase)
-                ? "down"
-                : "up";
+        // 口径与知识资产（seed）里检查项断言一致：
+        // - 依赖类（MySQL / Redis / Kafka / StarRocks）返回 up；
+        // - 服务进程类默认 healthy；示例故障服务返回 degraded / down，便于演示异常与恢复。
+        var normalized = (service ?? string.Empty).Trim().ToLowerInvariant();
+        var status = normalized switch
+        {
+            "mysql" or "redis" or "kafka" or "starrocks" => "up",
+            "database" or "payment" => "down",
+            "search" => "degraded",
+            _ => "healthy",
+        };
 
         return JsonSerializer.Serialize(new { service, status }, JsonOptions);
     }
