@@ -40,27 +40,34 @@ internal sealed class ChecklistRunQueueHostedService(
 {
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        await foreach (var request in queue.Reader.ReadAllAsync(stoppingToken))
+        try
         {
-            try
+            await foreach (var request in queue.Reader.ReadAllAsync(stoppingToken))
             {
-                await using var scope = scopeFactory.CreateAsyncScope();
-                var orchestrator = scope.ServiceProvider.GetRequiredService<IInspectionOrchestrator>();
-                await orchestrator.RunAsync(request.ChecklistId, request.EnvironmentId, stoppingToken);
+                try
+                {
+                    await using var scope = scopeFactory.CreateAsyncScope();
+                    var orchestrator = scope.ServiceProvider.GetRequiredService<IInspectionOrchestrator>();
+                    await orchestrator.RunAsync(request.ChecklistId, request.EnvironmentId, stoppingToken);
+                }
+                catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+                {
+                    break;
+                }
+                catch (Exception ex)
+                {
+                    logger.LogError(
+                        ex,
+                        "后台执行检查单 {ChecklistId}（环境 {EnvironmentId}，触发 {Trigger}）失败。",
+                        request.ChecklistId,
+                        request.EnvironmentId,
+                        request.Trigger);
+                }
             }
-            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
-            {
-                break;
-            }
-            catch (Exception ex)
-            {
-                logger.LogError(
-                    ex,
-                    "后台执行检查单 {ChecklistId}（环境 {EnvironmentId}，触发 {Trigger}）失败。",
-                    request.ChecklistId,
-                    request.EnvironmentId,
-                    request.Trigger);
-            }
+        }
+        catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+        {
+            // 正常停机 / 启动失败回滚：通道读取被取消，不向 Host 抛异常。
         }
     }
 }
