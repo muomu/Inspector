@@ -1,3 +1,4 @@
+using System.Net;
 using System.Security.Cryptography;
 using System.Text;
 using GrowthInspector.Core.Options;
@@ -11,6 +12,31 @@ namespace GrowthInspector.Management;
 /// </summary>
 public static class ManagementMcpRequestGuard
 {
+    /// <summary>
+    /// 默认 BindAddress 为 loopback，此时只接受来自 loopback 的客户端；
+    /// 配置成非 loopback 地址时交给宿主绑定策略，不在这里额外限制。
+    /// </summary>
+    public static bool IsAllowedClientAddress(HttpContext context, ManagementMcpOptions options)
+    {
+        if (!IPAddress.TryParse(options.BindAddress, out var bindAddress) || !IPAddress.IsLoopback(bindAddress))
+        {
+            return true;
+        }
+
+        var remoteAddress = context.Connection.RemoteIpAddress;
+        if (remoteAddress is null)
+        {
+            return false;
+        }
+
+        if (IPAddress.IsLoopback(remoteAddress))
+        {
+            return true;
+        }
+
+        return remoteAddress.IsIPv4MappedToIPv6 && IPAddress.IsLoopback(remoteAddress.MapToIPv4());
+    }
+
     public static bool IsAllowedHostAndOrigin(HttpRequest request, ManagementMcpOptions options)
     {
         var allowedOrigins = NormalizeOrigins(options.AllowedOrigins);

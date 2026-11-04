@@ -85,6 +85,14 @@ public static class ManagementServiceCollectionExtensions
         RequestDelegate next,
         ManagementMcpOptions options)
     {
+        if (!ManagementMcpRequestGuard.IsAllowedClientAddress(context, options))
+        {
+            context.Response.StatusCode = StatusCodes.Status403Forbidden;
+            context.Response.ContentType = "application/json; charset=utf-8";
+            await context.Response.WriteAsync("{\"error\":\"loopback_only\"}");
+            return;
+        }
+
         if (!ManagementMcpRequestGuard.IsAllowedHostAndOrigin(context.Request, options))
         {
             context.Response.StatusCode = StatusCodes.Status403Forbidden;

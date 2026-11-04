@@ -158,7 +158,7 @@ public sealed class ManagementServiceTests
         var runbookA = await context.Management.CreateRunbookAsync(
             new CreateRunbookRequest(projectA, "Alpha 手册"));
         await context.Management.AddChecklistRunbookRefAsync(checklistA, runbookA);
-        Assert.Single(await context.Management.ListChecklistRunbookRefsAsync(checklistA));
+        Assert.Single((await context.Management.ListChecklistRunbookRefsAsync(checklistA)).Items);
 
         // 触发请求落到同一项目的环境。
         var enqueued = await context.Management.EnqueueChecklistRunAsync(checklistA, environmentA);

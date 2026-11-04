@@ -331,12 +331,14 @@ public sealed partial class ManagementService
 
     // ---- 检查单 ↔ 手册引用 ----
 
-    public async Task<IReadOnlyList<ChecklistRunbookRefView>> ListChecklistRunbookRefsAsync(
+    public async Task<PagedResult<ChecklistRunbookRefView>> ListChecklistRunbookRefsAsync(
         Guid checklistId,
+        int limit = 200,
+        string? cursor = null,
         CancellationToken cancellationToken = default)
     {
         await using var db = await dbContextFactory.CreateDbContextAsync(cancellationToken);
-        return await db.ChecklistRunbookRefs.AsNoTracking()
+        var query = db.ChecklistRunbookRefs.AsNoTracking()
             .Where(x => x.ChecklistId == checklistId)
             .OrderBy(x => x.Runbook!.Title)
             .Select(x => new ChecklistRunbookRefView(
@@ -345,8 +347,9 @@ public sealed partial class ManagementService
                 x.RunbookId,
                 x.Runbook!.Title,
                 x.Runbook.Kind,
-                x.Runbook.IsArchived))
-            .ToListAsync(cancellationToken);
+                x.Runbook.IsArchived));
+
+        return await ManagementRules.PageAsync(query, limit, cursor, cancellationToken);
     }
 
     public async Task<IReadOnlyList<RunbookSummaryView>> ListAssignableRunbooksAsync(

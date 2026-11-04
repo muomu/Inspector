@@ -152,12 +152,16 @@ public sealed class ReadTools(IManagementService management)
             cancellationToken));
 
     [McpServerTool(Name = "checklist_runbook_list", ReadOnly = true, Destructive = false, Idempotent = true, OpenWorld = false)]
-    [Description("列出检查单引用的专用手册。")]
+    [Description("分页列出检查单引用的专用手册。")]
     public Task<string> ListChecklistRunbookRefsAsync(
         string checklistId,
+        int? limit = null,
+        string? cursor = null,
         CancellationToken cancellationToken = default)
         => ToolResponse.RunAsync(async () => await management.ListChecklistRunbookRefsAsync(
             ToolResponse.ParseId(checklistId, "checklistId"),
+            limit ?? 200,
+            cursor,
             cancellationToken));
 
     // ---- 执行 / 结果 / 异常 / 摘要 / 工具调用 ----

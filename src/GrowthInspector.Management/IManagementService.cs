@@ -95,8 +95,8 @@ public interface IManagementService : IRunbookWriteService
 
     // ---- 检查单 ↔ 手册引用 ----
 
-    Task<IReadOnlyList<ChecklistRunbookRefView>> ListChecklistRunbookRefsAsync(
-        Guid checklistId, CancellationToken cancellationToken = default);
+    Task<PagedResult<ChecklistRunbookRefView>> ListChecklistRunbookRefsAsync(
+        Guid checklistId, int limit = 200, string? cursor = null, CancellationToken cancellationToken = default);
 
     /// <summary>可被检查单引用的手册：同 Project、未归档、专用。</summary>
     Task<IReadOnlyList<RunbookSummaryView>> ListAssignableRunbooksAsync(

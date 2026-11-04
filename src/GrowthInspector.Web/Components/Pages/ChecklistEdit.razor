@@ -248,7 +248,7 @@ else
                 .ToList();
             removedItemIds = [];
 
-            var references = await Management.ListChecklistRunbookRefsAsync(Id);
+            var references = (await Management.ListChecklistRunbookRefsAsync(Id)).Items;
             selectedRunbookIds = references.Select(x => x.RunbookId).ToHashSet();
             availableRunbooks = (await Management.ListAssignableRunbooksAsync(Id)).ToList();
 
@@ -358,7 +358,7 @@ else
                 sortOrder++;
             }
 
-            var existingRefs = (await Management.ListChecklistRunbookRefsAsync(Id))
+            var existingRefs = (await Management.ListChecklistRunbookRefsAsync(Id)).Items
                 .Select(x => x.RunbookId)
                 .ToHashSet();
 
