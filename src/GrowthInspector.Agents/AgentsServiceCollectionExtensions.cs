@@ -18,17 +18,29 @@ public static class AgentsServiceCollectionExtensions
         this IServiceCollection services,
         DeepSeekOptions deepSeekOptions)
     {
-        var apiKey = Environment.GetEnvironmentVariable(DeepSeekChatClientFactory.ApiKeyEnvironmentVariable);
+        var apiKey = DeepSeekChatClientFactory.ReadApiKeyFromEnvironment();
 
         if (string.IsNullOrWhiteSpace(apiKey))
         {
-            services.AddSingleton<IChatClient>(_ => new UnavailableChatClient(
-                $"未配置环境变量 {DeepSeekChatClientFactory.ApiKeyEnvironmentVariable}，模型调用不可用。"));
+            // 缺 key 时进程照常启动：注册显式失败的占位客户端，调用方拿到可识别异常后走兜底。
+            services.AddSingleton(_ =>
+            {
+                var unavailable = new UnavailableChatClient(
+                    $"未配置环境变量 {DeepSeekChatClientFactory.ApiKeyEnvironmentVariable}，模型调用不可用。",
+                    DeepSeekFailureKind.MissingApiKey);
+                return new DeepSeekChatClients(unavailable, unavailable);
+            });
         }
         else
         {
-            services.AddSingleton(_ => DeepSeekChatClientFactory.Create(deepSeekOptions, apiKey));
+            services.AddSingleton(_ => new DeepSeekChatClients(
+                DeepSeekChatClientFactory.CreateClient(deepSeekOptions, apiKey, DeepSeekClientRole.Execution),
+                DeepSeekChatClientFactory.CreateClient(deepSeekOptions, apiKey, DeepSeekClientRole.Summary)));
         }
+
+        // 单客户端注入点（执行角色）保持骨架阶段的兼容；需要摘要模型时注入 DeepSeekChatClients。
+        services.AddSingleton<IChatClient>(provider =>
+            provider.GetRequiredService<DeepSeekChatClients>().Execution);
 
         services.AddSingleton<IChecklistItemExecutor, StubChecklistItemExecutor>();
         services.AddSingleton<IMcpToolInvoker, StubMcpToolInvoker>();
