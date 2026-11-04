@@ -1,4 +1,5 @@
 using GrowthInspector.Core.Options;
+using GrowthInspector.Orchestration.Queue;
 using GrowthInspector.Orchestration.Scheduling;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -12,11 +13,15 @@ namespace GrowthInspector.Web.Scheduling;
 /// </summary>
 public sealed class InspectionSchedulerHostedService(
     ChecklistScheduleScanner scanner,
+    ChecklistRunStartupGate startupGate,
     IOptions<InspectionOptions> options,
     ILogger<InspectionSchedulerHostedService> logger) : BackgroundService
 {
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
+        // 等启动清理完成后再扫描，避免把遗留 Running 当成互斥占用而写出 Skipped。
+        await startupGate.Completion.WaitAsync(stoppingToken);
+
         var tickSeconds = Math.Max(5, options.Value.SchedulerTickSeconds);
         logger.LogInformation("巡检调度器已启动，每 {TickSeconds}s 扫描一次频率触发。", tickSeconds);
 

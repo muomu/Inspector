@@ -47,6 +47,7 @@ public sealed class ChecklistRunRecovery(
 /// <summary>在队列 worker 之前执行启动清理的 hosted service。</summary>
 public sealed class ChecklistRunRecoveryHostedService(
     ChecklistRunRecovery recovery,
+    ChecklistRunStartupGate startupGate,
     ILogger<ChecklistRunRecoveryHostedService> logger) : IHostedService
 {
     public async Task StartAsync(CancellationToken cancellationToken)
@@ -59,6 +60,10 @@ public sealed class ChecklistRunRecoveryHostedService(
         {
             // 清理失败不应阻止应用启动；遗留执行会在后续启动时继续被清理。
             logger.LogError(ex, "启动清理遗留执行失败。");
+        }
+        finally
+        {
+            startupGate.MarkCompleted();
         }
     }
 

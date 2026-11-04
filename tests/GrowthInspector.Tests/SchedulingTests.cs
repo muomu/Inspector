@@ -6,6 +6,7 @@ using GrowthInspector.Orchestration.Queue;
 using GrowthInspector.Orchestration.Scheduling;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
 using Environment = GrowthInspector.Core.Models.Environment;
 
 namespace GrowthInspector.Tests;
@@ -349,6 +350,71 @@ public sealed class SchedulingTests
 
         Assert.Equal(0, (await scanner.ScanOnceAsync()).TriggeredPairs);
         Assert.Single(recording.Calls);
+    }
+
+    [Fact]
+    public async Task QueueWorker_ExecutesEnqueuedRunEndToEnd()
+    {
+        await using var host = await InspectorTestHost.CreateAsync();
+
+        var project = new Project { Name = "队列端到端项目", Code = "queue-e2e" };
+        var environment = new Environment { Name = "prod", Project = project };
+        project.Environments.Add(environment);
+        var checklist = new Checklist
+        {
+            Name = "队列端到端检查单",
+            Frequency = ChecklistFrequency.Manual,
+            Project = project,
+        };
+        checklist.Items.Add(new ChecklistItem { Title = "检查项一", SortOrder = 0 });
+        checklist.Items.Add(new ChecklistItem { Title = "检查项二", SortOrder = 1 });
+
+        await using (var db = await host.DbFactory.CreateDbContextAsync())
+        {
+            db.Projects.Add(project);
+            db.Checklists.Add(checklist);
+            await db.SaveChangesAsync();
+        }
+
+        var hostedServices = host.Services.GetServices<IHostedService>().ToList();
+        var recovery = Assert.Single(hostedServices.OfType<ChecklistRunRecoveryHostedService>());
+        var worker = Assert.Single(hostedServices.OfType<ChecklistRunQueueWorker>());
+
+        await recovery.StartAsync(CancellationToken.None);
+        await worker.StartAsync(CancellationToken.None);
+        try
+        {
+            var queue = host.Services.GetRequiredService<ChecklistRunQueue>();
+            var runId = await queue.EnqueueRunAsync(
+                ChecklistTrigger.Manual,
+                checklist.Id,
+                environment.Id);
+
+            RunStatus? status = null;
+            for (var attempt = 0; attempt < 100 && status is not (RunStatus.Succeeded or RunStatus.Failed); attempt++)
+            {
+                await Task.Delay(50);
+                await using var db = await host.DbFactory.CreateDbContextAsync();
+                status = await db.ChecklistRuns
+                    .Where(x => x.Id == runId)
+                    .Select(x => (RunStatus?)x.Status)
+                    .SingleAsync();
+            }
+
+            Assert.Equal(RunStatus.Succeeded, status);
+
+            await using var verifyDb = await host.DbFactory.CreateDbContextAsync();
+            var run = await verifyDb.ChecklistRuns
+                .Include(x => x.Results)
+                .SingleAsync(x => x.Id == runId);
+            Assert.Equal(2, run.Results.Count);
+            Assert.Equal(1, await verifyDb.AiSummaries.CountAsync(x => x.ChecklistRunId == runId));
+        }
+        finally
+        {
+            await worker.StopAsync(CancellationToken.None);
+            await recovery.StopAsync(CancellationToken.None);
+        }
     }
 
     private static ChecklistRun NewScheduleRun(Checklist checklist, Environment environment, DateTimeOffset startedAt)

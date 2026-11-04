@@ -26,6 +26,7 @@ public static class OrchestrationServiceCollectionExtensions
         services.AddSingleton<ChecklistRunQueue>();
         services.AddSingleton<IChecklistRunQueue>(sp => sp.GetRequiredService<ChecklistRunQueue>());
         services.AddSingleton<ChecklistRunRecovery>();
+        services.AddSingleton<ChecklistRunStartupGate>();
         services.AddHostedService<ChecklistRunRecoveryHostedService>();
         services.AddHostedService<ChecklistRunQueueWorker>();
         services.AddSingleton<ChecklistScheduleScanner>();

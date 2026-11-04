@@ -12,12 +12,15 @@ namespace GrowthInspector.Orchestration.Queue;
 /// </summary>
 public sealed class ChecklistRunQueueWorker(
     ChecklistRunQueue queue,
+    ChecklistRunStartupGate startupGate,
     IServiceScopeFactory scopeFactory,
     IOptions<InspectionOptions> options,
     ILogger<ChecklistRunQueueWorker> logger) : BackgroundService
 {
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
+        await startupGate.Completion.WaitAsync(stoppingToken);
+
         var concurrency = Math.Max(1, options.Value.MaxConcurrentChecklists);
         logger.LogInformation(
             "检查单执行队列 worker 已启动（并发上限 {Concurrency}，tick 间隔 {TickSeconds}s）。",
