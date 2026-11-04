@@ -11,8 +11,8 @@ namespace GrowthInspector.Agents;
 public static class AgentsServiceCollectionExtensions
 {
     /// <summary>
-    /// 注册 agent 层依赖：DeepSeek IChatClient（无 key 时降级为不可用实现）、
-    /// 检查项执行器与 MCP 工具调用的骨架实现。
+    /// 注册 agent 层依赖：DeepSeek 执行 / 摘要客户端（无 key 时降级为不可用实现）、
+    /// 检查项执行器与 MCP 工具调用入口。
     /// </summary>
     public static IServiceCollection AddGrowthInspectorAgents(
         this IServiceCollection services,
@@ -43,7 +43,10 @@ public static class AgentsServiceCollectionExtensions
             provider.GetRequiredService<DeepSeekChatClients>().Execution);
 
         services.AddSingleton<IChecklistItemExecutor, StubChecklistItemExecutor>();
-        services.AddSingleton<IMcpToolInvoker, StubMcpToolInvoker>();
+        services.AddSingleton<IMcpServerConnectionFactory>(provider =>
+            new McpServerConnectionFactory(
+                provider.GetRequiredService<Microsoft.Extensions.Logging.ILoggerFactory>()));
+        services.AddSingleton<IMcpToolInvoker, McpToolInvoker>();
 
         return services;
     }
