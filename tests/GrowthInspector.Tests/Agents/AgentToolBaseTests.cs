@@ -111,6 +111,12 @@ public sealed class AgentToolBaseTests : IDisposable
         var fallbackHits = await fallback.SearchAsync(seed.Project.Id, "连接池");
         Assert.Equal(hits.Select(x => (x.RunbookId, x.Title)), fallbackHits.Select(x => (x.RunbookId, x.Title)));
 
+        // 短于 trigram 长度的中文子串也必须命中，且两条路径一致。
+        var shortHits = await service.SearchAsync(seed.Project.Id, "连接");
+        var shortFallback = await fallback.SearchAsync(seed.Project.Id, "连接");
+        Assert.Single(shortHits);
+        Assert.Equal(shortHits[0].RunbookId, Assert.Single(shortFallback).RunbookId);
+
         var noHit = await service.SearchAsync(seed.Project.Id, "不存在的关键词");
         Assert.Empty(noHit);
     }

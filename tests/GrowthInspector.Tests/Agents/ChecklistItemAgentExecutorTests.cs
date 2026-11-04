@@ -204,6 +204,52 @@ public sealed class ChecklistItemAgentExecutorTests : IDisposable
         Assert.Contains("截断", result.ErrorMessage);
     }
 
+    [Fact]
+    public async Task PromptIncludesAllChecklistItemAssertionsFromSnapshot()
+    {
+        var seed = await AgentTestData.SeedAsync(database);
+        var snapshot = new ChecklistSnapshot(
+            seed.Checklist.Id,
+            seed.Checklist.Name,
+            ChecklistFrequency.Manual,
+            ChecklistTrigger.Manual,
+            [
+                new ChecklistSnapshotItem(
+                    seed.Item.Id, "当前项", 0, null, null, null, null, null, null, null, 1, null, null),
+                new ChecklistSnapshotItem(
+                    Guid.NewGuid(), "另一项断言", 1, "mock__OtherTool", "{}", "$.value",
+                    ComparisonOperator.Lt, "10", "1h", Severity.Warning, 2,
+                    "其他数据源", "另一项的预期。"),
+            ],
+            [],
+            [],
+            []);
+
+        await using (var db = await database.Factory.CreateDbContextAsync())
+        {
+            var run = await db.ChecklistRuns.SingleAsync(x => x.Id == seed.Run.Id);
+            run.SnapshotJson = JsonSerializer.Serialize(
+                snapshot,
+                new JsonSerializerOptions(JsonSerializerDefaults.Web));
+            await db.SaveChangesAsync();
+        }
+
+        var chat = new ScriptedChatClient()
+            .Enqueue(ScriptedChatClient.Text(ClaimWith(
+                seed.Item.Id,
+                "InsufficientEvidence",
+                null,
+                toolName: string.Empty)));
+
+        var executor = await CreateJudgementExecutorAsync(chat, seed);
+        await executor.ExecuteAsync(CreateRequest(seed, judgement: false));
+
+        var userText = chat.Requests[0].Single(message => message.Role == ChatRole.User).Text;
+        Assert.Contains("另一项断言", userText);
+        Assert.Contains("mock__OtherTool", userText);
+        Assert.Contains("其他数据源", userText);
+    }
+
     private async Task<ChecklistItemAgentExecutor> CreateJudgementExecutorAsync(
         ScriptedChatClient chat,
         AgentSeed seed,
