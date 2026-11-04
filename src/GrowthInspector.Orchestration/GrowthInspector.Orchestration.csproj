@@ -1,8 +1,19 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
 
   <ItemGroup>
     <ProjectReference Include="..\GrowthInspector.Core\GrowthInspector.Core.csproj" />
     <ProjectReference Include="..\GrowthInspector.Data\GrowthInspector.Data.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- 后台队列 worker（BackgroundService / IHostedService）。 -->
+    <PackageReference Include="Microsoft.Extensions.Hosting.Abstractions" Version="10.0.8" />
+    <!-- IOptions / ILogger / DI 抽象：编排层直接依赖配置与日志。 -->
+    <PackageReference Include="Microsoft.Extensions.Options" Version="10.0.14" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.14" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="10.0.14" />
+    <!-- 摘要 agent 只依赖 IChatClient 抽象，不依赖具体 provider。 -->
+    <PackageReference Include="Microsoft.Extensions.AI.Abstractions" Version="10.10.0" />
   </ItemGroup>
 
   <PropertyGroup>

@@ -1,4 +1,5 @@
 using GrowthInspector.Core.Options;
+using GrowthInspector.Orchestration.Scheduling;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -6,23 +7,42 @@ using Microsoft.Extensions.Options;
 namespace GrowthInspector.Web.Scheduling;
 
 /// <summary>
-/// 检查单调度器骨架：保留心跳与配置读取。
-/// 真正的「按频率触发 + 快照」由 TPG-2706 实现（每 tick 重新读取启用检查单，保证新建/编辑即时生效）。
+/// 检查单调度器：每个 tick 调 <see cref="ChecklistScheduleScanner"/> 重读库并触发到期的
+/// Hourly / Daily 检查单（新建、编辑、停用、归档在下一 tick 即时生效）。
 /// </summary>
 public sealed class InspectionSchedulerHostedService(
+    ChecklistScheduleScanner scanner,
     IOptions<InspectionOptions> options,
     ILogger<InspectionSchedulerHostedService> logger) : BackgroundService
 {
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         var tickSeconds = Math.Max(5, options.Value.SchedulerTickSeconds);
-        logger.LogInformation(
-            "巡检调度器已启动（骨架阶段：仅心跳，周期 {TickSeconds}s；触发逻辑由 TPG-2706 接入）。",
-            tickSeconds);
+        logger.LogInformation("巡检调度器已启动，每 {TickSeconds}s 扫描一次频率触发。", tickSeconds);
 
         using var timer = new PeriodicTimer(TimeSpan.FromSeconds(tickSeconds));
         while (!stoppingToken.IsCancellationRequested)
         {
+            try
+            {
+                var result = await scanner.ScanOnceAsync(stoppingToken);
+                if (result.TriggeredPairs > 0)
+                {
+                    logger.LogInformation(
+                        "调度扫描：{TriggeredPairs} 个 (检查单, 环境) 到期并写入后台队列。",
+                        result.TriggeredPairs);
+                }
+            }
+            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+            {
+                break;
+            }
+            catch (Exception ex)
+            {
+                // 扫描失败不终止调度器，等待下一 tick 重试。
+                logger.LogError(ex, "调度扫描失败，等待下一 tick。");
+            }
+
             try
             {
                 await timer.WaitForNextTickAsync(stoppingToken);
@@ -31,9 +51,6 @@ public sealed class InspectionSchedulerHostedService(
             {
                 break;
             }
-
-            // TODO(TPG-2706): 查询启用的 Hourly / Daily 检查单与环境，按最后执行时间判断是否到期并调用编排。
-            logger.LogDebug("调度心跳 {Timestamp}：到期检查单扫描尚未接入。", DateTimeOffset.Now);
         }
     }
 }
