@@ -1,6 +1,7 @@
 using GrowthInspector.Agents.Chat;
 using GrowthInspector.Agents.Execution;
 using GrowthInspector.Agents.Mcp;
+using GrowthInspector.Agents.Reflection;
 using GrowthInspector.Agents.Tools;
 using GrowthInspector.Core.Abstractions;
 using GrowthInspector.Core.Options;
@@ -50,6 +51,7 @@ public static class AgentsServiceCollectionExtensions
             sp.GetRequiredService<ILoggerFactory>()));
 
         services.AddScoped<IChecklistItemExecutor, ChecklistItemAgentExecutor>();
+        services.AddScoped<IReflectionAgent, ReflectionAgent>();
         services.AddSingleton<IMcpToolInvoker, StubMcpToolInvoker>();
 
         return services;
