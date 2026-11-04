@@ -221,7 +221,8 @@ public sealed class GrowthInspectorDbContext(DbContextOptions<GrowthInspectorDbC
             entity.Property(x => x.Severity).HasConversion<string>().HasMaxLength(20);
             entity.Property(x => x.Status).HasConversion<string>().HasMaxLength(20);
             entity.Property(x => x.CloseReason).HasConversion<string>().HasMaxLength(20);
-            entity.HasIndex(x => x.DedupKey).IsUnique();
+            // 同一去重键最多一条 Open：规则变更 / 恢复后允许同键保留多条已关闭历史记录。
+            entity.HasIndex(x => x.DedupKey).IsUnique().HasFilter("\"Status\" = 'Open'");
             entity.HasIndex(x => new { x.EnvironmentId, x.Status });
             entity.HasOne<Project>().WithMany().HasForeignKey(x => x.ProjectId).OnDelete(DeleteBehavior.Restrict);
             entity.HasOne<Environment>().WithMany().HasForeignKey(x => x.EnvironmentId).OnDelete(DeleteBehavior.Restrict);
