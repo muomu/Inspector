@@ -1,0 +1,34 @@
+{
+  "runbooks": [
+    {
+      "title": "Growth 通用运维手册：服务拓扑、指标口径与告警升级",
+      "kind": "General",
+      "bodyFile": "runbooks/general-growth-ops.md"
+    },
+    {
+      "title": "触达准入层：外部询问 hook 的监控与告警",
+      "kind": "Specialized",
+      "bodyFile": "runbooks/gatekeeper-consent-hooks.md"
+    },
+    {
+      "title": "用户事件消费链失败消息处置（原生 Kafka 消费组 + 死信 topic）",
+      "kind": "Specialized",
+      "bodyFile": "runbooks/workflow-dlq.md"
+    },
+    {
+      "title": "消息积压与工作流卡单",
+      "kind": "Specialized",
+      "bodyFile": "runbooks/backlog-and-stuck-workflow.md"
+    },
+    {
+      "title": "CAP outbox 积压处置",
+      "kind": "Specialized",
+      "bodyFile": "runbooks/cap-outbox.md"
+    },
+    {
+      "title": "数仓空分区、枚举漂移与对账",
+      "kind": "Specialized",
+      "bodyFile": "runbooks/warehouse-quality.md"
+    }
+  ]
+}
