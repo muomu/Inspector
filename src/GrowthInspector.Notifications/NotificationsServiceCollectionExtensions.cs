@@ -2,6 +2,7 @@ using GrowthInspector.Core.Abstractions;
 using GrowthInspector.Core.Options;
 using GrowthInspector.Notifications.Findings;
 using GrowthInspector.Notifications.Lark;
+using GrowthInspector.Notifications.Reports;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 
@@ -23,6 +24,13 @@ public static class NotificationsServiceCollectionExtensions
 
         // finding 状态机（TPG-2713）：调用方在一轮执行结束后触发 EvaluateRunAsync。
         services.AddScoped<IFindingNotifier, FindingNotifier>();
+
+        // 每日 10:00 日报（TPG-2714）：按 Project 生成内容并逐 Project 发送（v1 mock）。
+        services.AddScoped<IProjectDailyReportBuilder, ProjectDailyReportBuilder>();
+        services.AddScoped<DailyReportRunner>();
+        services.AddSingleton<DailyReportRunState>();
+        services.AddScoped<DailyReportScheduler>();
+        services.AddHostedService<DailyReportHostedService>();
 
         return services;
     }
