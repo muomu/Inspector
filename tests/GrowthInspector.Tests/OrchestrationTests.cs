@@ -282,6 +282,36 @@ public sealed class OrchestrationTests
     }
 
     [Fact]
+    public async Task ExecuteRunAsync_WhenSnapshotIsInvalid_MarksRunFailed()
+    {
+        await using var host = await InspectorTestHost.CreateAsync();
+        var seeded = await SeedChecklistAsync(host, "bad-snapshot", ("检查项", 0));
+
+        var run = new ChecklistRun
+        {
+            ChecklistId = seeded.Checklist.Id,
+            EnvironmentId = seeded.Environment.Id,
+            Status = RunStatus.Pending,
+            SnapshotJson = "{ not a snapshot }",
+        };
+
+        await using (var db = await host.DbFactory.CreateDbContextAsync())
+        {
+            db.ChecklistRuns.Add(run);
+            await db.SaveChangesAsync();
+        }
+
+        var executor = host.Services.GetRequiredService<IChecklistRunExecutor>();
+        await executor.ExecuteRunAsync(run.Id);
+
+        await using var verifyDb = await host.DbFactory.CreateDbContextAsync();
+        var persisted = await verifyDb.ChecklistRuns.SingleAsync(x => x.Id == run.Id);
+        Assert.Equal(RunStatus.Failed, persisted.Status);
+        Assert.False(string.IsNullOrWhiteSpace(persisted.ErrorMessage));
+        Assert.NotNull(persisted.CompletedAt);
+    }
+
+    [Fact]
     public void OrchestrationAssembly_DoesNotReferenceMaf()
     {
         var references = typeof(ChecklistRunOrchestrator).Assembly

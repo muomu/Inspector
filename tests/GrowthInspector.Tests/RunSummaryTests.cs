@@ -134,6 +134,24 @@ public sealed class RunSummaryTests
     }
 
     [Fact]
+    public async Task Summarize_WhenModelCallTimesOut_UsesTemplateFallback()
+    {
+        await using var host = await InspectorTestHost.CreateAsync(
+            afterBuilder: services => services.AddSingleton<IChatClient>(new SlowChatClient()),
+            configureDeepSeek: options => options.TimeoutSeconds = 1);
+
+        var seeded = await SeedRunAsync(host, "timeout");
+        var summaryId = await host.Services
+            .GetRequiredService<IRunSummaryService>()
+            .SummarizeRunAsync(seeded.Run.Id);
+
+        await using var db = await host.DbFactory.CreateDbContextAsync();
+        var summary = await db.AiSummaries.SingleAsync(x => x.Id == summaryId);
+        Assert.True(summary.FallbackUsed);
+        Assert.Contains("模型摘要不可用", summary.Content);
+    }
+
+    [Fact]
     public async Task Summarize_WhenNoChatClientRegistered_UsesTemplateFallback()
     {
         await using var host = await InspectorTestHost.CreateAsync();
@@ -272,6 +290,30 @@ public sealed class RunSummaryTests
             ChatOptions? options = null,
             CancellationToken cancellationToken = default)
             => throw exception;
+
+        public IAsyncEnumerable<ChatResponseUpdate> GetStreamingResponseAsync(
+            IEnumerable<ChatMessage> messages,
+            ChatOptions? options = null,
+            CancellationToken cancellationToken = default)
+            => throw new NotSupportedException("测试 stub 不支持流式响应。");
+
+        public object? GetService(Type serviceType, object? serviceKey = null) => null;
+
+        public void Dispose()
+        {
+        }
+    }
+
+    private sealed class SlowChatClient : IChatClient
+    {
+        public async Task<ChatResponse> GetResponseAsync(
+            IEnumerable<ChatMessage> messages,
+            ChatOptions? options = null,
+            CancellationToken cancellationToken = default)
+        {
+            await Task.Delay(TimeSpan.FromSeconds(30), cancellationToken);
+            return new ChatResponse(new ChatMessage(ChatRole.Assistant, "不会返回"));
+        }
 
         public IAsyncEnumerable<ChatResponseUpdate> GetStreamingResponseAsync(
             IEnumerable<ChatMessage> messages,
