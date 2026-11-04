@@ -1,0 +1,185 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Growth Inspector · 视觉风格样张 v0.2</title>
+  <link rel="stylesheet" href="assets/tokens.css">
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/components.css">
+  <style>
+    .review { max-width: 1240px; margin: 0 auto; padding: 0 32px 96px; }
+    .review-hero { padding: 56px 0 28px; border-bottom: 2px solid var(--ink); }
+    .review-hero h1 { font-size: 44px; max-width: 18em; }
+    .review-hero p { max-width: 70ch; margin-top: 14px; color: var(--ink-soft); }
+    .review-kicker { color: var(--accent); font-family: var(--mono); font-size: 10.5px; letter-spacing: .16em; text-transform: uppercase; }
+    .review-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 24px; margin-top: 22px; }
+    .layout-switch { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; margin-top: 26px; }
+    .layout-switch a { display: flex; flex-direction: column; gap: 3px; padding: 18px 20px; border: 1px solid var(--line-strong); background: var(--paper-raised); color: var(--ink); text-decoration: none; }
+    .layout-switch a:hover { border-color: var(--accent); }
+    .layout-switch a.is-selected { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
+    .layout-switch strong { font-family: var(--serif); font-size: 22px; font-weight: 400; }
+    .layout-switch span { color: var(--muted); font-family: var(--mono); font-size: 11px; }
+    .layout-switch em { color: var(--muted); font-style: normal; font-size: 12px; }
+    .layout-card { border: 1px solid var(--line); background: var(--paper-raised); padding: 18px; }
+    .layout-card__head { display: flex; gap: 12px; align-items: baseline; }
+    .layout-card__letter { display: inline-flex; width: 28px; height: 28px; align-items: center; justify-content: center; border: 1px solid var(--ink); font-family: var(--mono); font-size: 12px; }
+    .layout-card h3 { font-family: var(--serif); font-size: 20px; font-weight: 400; }
+    .layout-card p { color: var(--muted); font-size: 12px; }
+    .layout-card__desc { min-height: 54px; margin: 10px 0 12px; }
+    .layout-card__links { font-family: var(--mono); font-size: 11px; }
+    .layout-card__preview { display: block; margin-top: 12px; border: 1px solid var(--line); background: var(--paper-raised); overflow: hidden; }
+    .layout-card__preview img { display: block; width: 100%; height: 260px; object-fit: cover; object-position: top; }
+    .layout-card__preview:hover img { opacity: .88; }
+    .palette-group { margin-top: 18px; }
+    .palette-group h3 { font-family: var(--serif); font-size: 18px; font-weight: 400; }
+    .palette-group h3 span { margin-left: 10px; color: var(--muted); font-family: var(--mono); font-size: 11px; }
+    .swatches { display: grid; grid-template-columns: repeat(8, minmax(0, 1fr)); gap: 10px; margin-top: 12px; }
+    .dark-preview { margin-top: 16px; border: 1px solid var(--line); background: var(--paper-raised); }
+    .dark-preview img { display: block; width: 100%; height: auto; }
+    .pattern-row { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; margin-top: 14px; }
+    .pattern-row figure { margin: 0; }
+    .pattern-row img { display: block; width: 100%; height: 92px; object-fit: cover; border: 1px solid var(--line); }
+    .pattern-row figcaption { margin-top: 6px; color: var(--muted); font-family: var(--mono); font-size: 10px; }
+    .swatch { border-top: 1px solid var(--line); padding-top: 8px; }
+    .swatch__chip { display: block; height: 42px; border: 1px solid var(--line); }
+    .swatch__name { display: block; margin-top: 6px; font-family: var(--mono); font-size: 10px; }
+    .swatch__value { display: block; color: var(--muted); font-family: var(--mono); font-size: 10px; }
+    .swatch__use { display: block; color: var(--muted); font-size: 11px; }
+    .specimen { display: grid; grid-template-columns: 1.2fr .8fr; gap: 32px; }
+    .specimen__serif { font-family: var(--serif); font-size: 40px; line-height: 1.25; }
+    .specimen__body { max-width: 60ch; color: var(--ink-soft); }
+    .review h2 { font-size: 26px; margin-top: 44px; padding-bottom: 8px; border-bottom: 1px solid var(--line-strong); }
+    .review-note { margin-top: 10px; color: var(--muted); font-size: 12px; }
+    @media (max-width: 960px) {
+      .review-grid { grid-template-columns: 1fr; }
+      .layout-switch { grid-template-columns: 1fr; }
+      .pattern-row { grid-template-columns: 1fr; }
+      .swatches { grid-template-columns: repeat(4, 1fr); }
+      .specimen { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body data-layout="a" data-page="index">
+  <main class="review">
+    <header class="review-hero">
+      <p class="review-kicker">Growth Inspector / Visual direction v0.2</p>
+      <h1>诊断报告：丝绸灰、玄色、墨青，和一份能读的巡检结论。</h1>
+      <p>
+        3 种版面 × 3 个关键页，共 9 张静态样张；浅色 / 深色两套 token，可在任一页右上角切换。
+        目的是先拍版面（宽度、行高、章节间距），再落 <code>/styleguide</code>。所有数据为样张数据。
+      </p>
+      <p class="review-note" style="margin-top: 14px;">
+        配套文档：<a href="style-spec.md">style-spec.md</a>（token / 字体 / 状态 / IA） ·
+        <a href="README.md">README.md</a>（打开方式与评审清单）
+      </p>
+    </header>
+
+    <div class="layout-switch" aria-label="三版版面">
+      <a href="v1/overview.html"><strong>A 报告栏</strong><span>1200 · 40px</span><em>居中、留白均衡，最像报告</em></a>
+      <a href="v2/overview.html"><strong>B 全宽</strong><span>100% · 36px</span><em>边到边、密度最高，适合宽表</em></a>
+      <a class="is-selected" href="v3/overview.html"><strong>C 留白 · 已选</strong><span>1120 · 48px · 88px</span><em>更克制、密度更低；宽表和长页面更长</em></a>
+    </div>
+    <p class="review-note">点进任一版后，右下角可切 A/B/C；右上角可切深色 / 浅色。并排看：<a href="compare.html">compare.html</a>（总览 + 执行详情）。</p>
+
+    <h2>色板</h2>
+    
+      <div class="palette-group">
+        <h3>浅色 · 丝绸灰 / 玄色</h3>
+        <div class="swatches"><div class="swatch"><span class="swatch__chip" style="background:#E6E7E4"></span><span class="swatch__name">paper</span><span class="swatch__value">#E6E7E4</span><span class="swatch__use">页面底 · 丝绸灰</span></div><div class="swatch"><span class="swatch__chip" style="background:#EFEFEC"></span><span class="swatch__name">paper-raised</span><span class="swatch__value">#EFEFEC</span><span class="swatch__use">面板</span></div><div class="swatch"><span class="swatch__chip" style="background:#1A1A1A"></span><span class="swatch__name">ink</span><span class="swatch__value">#1A1A1A</span><span class="swatch__use">主文字 · 玄色</span></div><div class="swatch"><span class="swatch__chip" style="background:#5B6670"></span><span class="swatch__name">muted</span><span class="swatch__value">#5B6670</span><span class="swatch__use">次要文字</span></div><div class="swatch"><span class="swatch__chip" style="background:#14535A"></span><span class="swatch__name">accent</span><span class="swatch__value">#14535A</span><span class="swatch__use">链接 / 激活 · 墨青</span></div><div class="swatch"><span class="swatch__chip" style="background:#B23A2F"></span><span class="swatch__name">danger</span><span class="swatch__value">#B23A2F</span><span class="swatch__use">仅异常</span></div><div class="swatch"><span class="swatch__chip" style="background:#8A5A00"></span><span class="swatch__name">warning</span><span class="swatch__value">#8A5A00</span><span class="swatch__use">注意</span></div><div class="swatch"><span class="swatch__chip" style="background:#2E6B45"></span><span class="swatch__name">ok</span><span class="swatch__value">#2E6B45</span><span class="swatch__use">通过</span></div></div>
+      </div>
+      <div class="palette-group">
+        <h3>深色 · 烟墨 / 月白</h3>
+        <div class="swatches"><div class="swatch"><span class="swatch__chip" style="background:#242B36"></span><span class="swatch__name">paper</span><span class="swatch__value">#242B36</span><span class="swatch__use">页面底 · 烟墨</span></div><div class="swatch"><span class="swatch__chip" style="background:#2C3441"></span><span class="swatch__name">paper-raised</span><span class="swatch__value">#2C3441</span><span class="swatch__use">面板</span></div><div class="swatch"><span class="swatch__chip" style="background:#D6ECF0"></span><span class="swatch__name">ink</span><span class="swatch__value">#D6ECF0</span><span class="swatch__use">主文字 · 月白</span></div><div class="swatch"><span class="swatch__chip" style="background:#A7B3B8"></span><span class="swatch__name">muted</span><span class="swatch__value">#A7B3B8</span><span class="swatch__use">次要文字</span></div><div class="swatch"><span class="swatch__chip" style="background:#8FC3C3"></span><span class="swatch__name">accent</span><span class="swatch__value">#8FC3C3</span><span class="swatch__use">链接 / 激活</span></div><div class="swatch"><span class="swatch__chip" style="background:#E08A80"></span><span class="swatch__name">danger</span><span class="swatch__value">#E08A80</span><span class="swatch__use">仅异常</span></div><div class="swatch"><span class="swatch__chip" style="background:#D6B06A"></span><span class="swatch__name">warning</span><span class="swatch__value">#D6B06A</span><span class="swatch__use">注意</span></div><div class="swatch"><span class="swatch__chip" style="background:#8EC3A0"></span><span class="swatch__name">ok</span><span class="swatch__value">#8EC3A0</span><span class="swatch__use">通过</span></div></div>
+      </div>
+    
+    <p class="review-note">对比度已算：浅色玄/丝绸灰 14.0:1、墨青 7.0:1、朱红 4.8:1、琥珀 4.8:1、通过绿 5.1:1；深色月白/烟墨 11.6:1、墨青 7.3:1、朱红 5.5:1、琥珀 7.0:1、通过绿 7.1:1。软底配对与徽章待 /styleguide 复核。</p>
+    <p class="review-note">背景纹样：16px 经纬 + 8px 斜纹，约 3% 不透明度；深色用月白线。只铺页面底，不铺面板 / 正文，打印自动关闭。</p>
+    <div class="pattern-row">
+      <figure><img src="screenshots/pattern-light.png" alt="浅色背景纹样 2 倍细节"><figcaption>浅色 · 丝绸灰 / 玄色线 · 2×</figcaption></figure>
+      <figure><img src="screenshots/pattern-dark.png" alt="深色背景纹样 2 倍细节"><figcaption>深色 · 烟墨 / 月白线 · 2×</figcaption></figure>
+    </div>
+
+    <h2>字体</h2>
+    <div class="specimen">
+      <div>
+        <p class="specimen__serif">巡检诊断：<br>每一条结论都有证据。</p>
+        <p class="mono" style="margin-top: 14px;">0fdf8154-66d8-4dea-be41-ef69da49b0c7 · 17:20:14 · 2.4 s</p>
+      </div>
+      <div class="specimen__body">
+        <p>标题用 Noto Serif SC，正文用 Noto Sans SC，ID / 时间 / 数字用 IBM Plex Mono。中文行高按 Material 的 CJK 口径比西文 +0.1em；表格数字统一 tabular-nums。</p>
+        <p style="margin-top: 10px; color: var(--muted); font-size: 12px;">字体均为 OFL，可自托管；样张已内嵌 woff2。</p>
+      </div>
+    </div>
+
+    <h2>深色预览</h2>
+    <p class="review-note">烟墨作底、月白作字；烟墨 #3B475B 同时作分隔线。深色下朱红提亮为 #E08A80、琥珀为 #D6B06A、通过绿为 #8EC3A0，墨青提亮为 #8FC3C3。</p>
+    <div class="dark-preview"><img src="screenshots/c-overview-dark.png" alt="C 留白深色总览预览" loading="lazy"></div>
+    <p class="review-note">C 留白 · 已选 · 深色。也可以直接打开 <a href="v3/overview.html?theme=dark">深色样张</a>，或点样张右上角「深色」切换。</p>
+
+    <h2>状态语义</h2>
+    
+      <div class="status-legend">
+        <div class="status-legend__item"><span class="status status--ok"><span class="status__glyph" aria-hidden="true">✓</span><span>Ok</span></span><p class="status-legend__desc">通过；低饱和。</p></div>
+        <div class="status-legend__item"><span class="status status--warn"><span class="status__glyph" aria-hidden="true">▲</span><span>注意</span></span><p class="status-legend__desc">Warning；琥珀。</p></div>
+        <div class="status-legend__item"><span class="status status--bad"><span class="status__glyph" aria-hidden="true">■</span><span>异常</span></span><p class="status-legend__desc">Abnormal / Critical；朱红。</p></div>
+        <div class="status-legend__item"><span class="status status--pending"><span class="status__glyph" aria-hidden="true">◇</span><span>待证</span></span><p class="status-legend__desc">Error / 证据不足；空心。</p></div>
+        <div class="status-legend__item"><span class="status status--idle"><span class="status__glyph" aria-hidden="true">—</span><span>中性</span></span><p class="status-legend__desc">Pending / Skipped。</p></div>
+        <div class="status-legend__item"><span class="status status--running"><span class="status__glyph" aria-hidden="true">◉</span><span>运行中</span></span><p class="status-legend__desc">accent 脉冲。</p></div>
+      </div>
+    
+    <p class="review-note">朱红只给 Abnormal / Critical；Error / Mismatch / 证据不足统一为“待证”，空心、低饱和。Running 用 accent 脉冲，不占状态色。</p>
+
+    <h2>三版对比</h2>
+    <p class="review-note">缩略图为总览页顶部；点开卡片进入该版的总览，再用卡片内链接看执行详情与异常。重点看：宽表在 1280 / 1440 下是否要横向滚动、章节间距是否够、首屏结论是否立得住。</p>
+    <div class="review-grid"><article class="layout-card">
+          <div class="layout-card__head">
+            <span class="layout-card__letter">A</span>
+            <div>
+              <h3>A 报告栏</h3>
+              <p class="mono">1200 / 40px</p>
+            </div>
+          </div>
+          <p class="layout-card__desc">1200 阅读宽度，表格横向滚动兜底，行高 40；默认候选。</p>
+          <div class="layout-card__links"><a href="v1/overview.html">总览</a> · <a href="v1/run.html">执行详情</a> · <a href="v1/findings.html">异常</a></div>
+          <a class="layout-card__preview" href="v1/overview.html">
+            <img src="screenshots/a-overview.png" alt="A 报告栏 总览页顶部预览" loading="lazy">
+          </a>
+        </article><article class="layout-card">
+          <div class="layout-card__head">
+            <span class="layout-card__letter">B</span>
+            <div>
+              <h3>B 全宽</h3>
+              <p class="mono">100% / 36px</p>
+            </div>
+          </div>
+          <p class="layout-card__desc">边到边，行高 36；信息密度最高，适合宽表。</p>
+          <div class="layout-card__links"><a href="v2/overview.html">总览</a> · <a href="v2/run.html">执行详情</a> · <a href="v2/findings.html">异常</a></div>
+          <a class="layout-card__preview" href="v2/overview.html">
+            <img src="screenshots/b-overview.png" alt="B 全宽 总览页顶部预览" loading="lazy">
+          </a>
+        </article><article class="layout-card">
+          <div class="layout-card__head">
+            <span class="layout-card__letter">C</span>
+            <div>
+              <h3>C 留白</h3>
+              <p class="mono">1120 / 48px</p>
+            </div>
+          </div>
+          <p class="layout-card__desc">1120 窄栏，行高 48，章节间距 88；已选：更克制、密度更低。</p>
+          <div class="layout-card__links"><a href="v3/overview.html">总览</a> · <a href="v3/run.html">执行详情</a> · <a href="v3/findings.html">异常</a></div>
+          <a class="layout-card__preview" href="v3/overview.html">
+            <img src="screenshots/c-overview.png" alt="C 留白 总览页顶部预览" loading="lazy">
+          </a>
+        </article></div>
+
+    <h2>看什么</h2>
+    <div class="layout-card">
+      <p><strong>A 报告栏</strong>：1200 宽 + 40 行高，最像“报告”；1440/1280 宽表可放下，≤1024 窄屏横向滚动。</p>
+      <p><strong>B 全宽</strong>：边到边 + 36 行高，信息密度最高；首屏能放下更多行，但长文阅读会累。</p>
+      <p><strong>C 留白（已选）</strong>：1120 宽 + 48 行高 + 88 章节间距；更克制、密度更低，宽表和长页面更长。</p>
+      <p class="review-note">筛选/按钮不提交；主题切换与执行详情里的证据折叠可用。右上角“深色”按钮会切换整套 token，并记住选择。</p>
+    </div>
+  </main>
+</body>
+</html>

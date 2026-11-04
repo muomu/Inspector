@@ -1,0 +1,352 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <title>执行详情 · Growth Inspector 视觉样张</title>
+  <link rel="stylesheet" href="../assets/tokens.css">
+  <link rel="stylesheet" href="../assets/base.css">
+  <link rel="stylesheet" href="../assets/components.css">
+</head>
+<body data-layout="c" data-page="run">
+  <a class="skip" href="#main">跳到正文</a>
+
+  <header class="masthead">
+    <div class="masthead__inner">
+      <a class="brand" href="../index.html">
+        <svg class="brand__mark" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+  <rect x="3.25" y="3.25" width="17.5" height="17.5" stroke="currentColor" stroke-width="1.4"/>
+  <path d="M8 7.5v9M12 7.5v4.5M16 7.5v6.5" stroke="currentColor" stroke-width="1.4"/>
+  <path d="M3.25 16.75h17.5" stroke="currentColor" stroke-width="1.4"/>
+</svg>
+        <span>
+          <span class="brand__name">Growth Inspector</span>
+          <span class="brand__sub">Inspection report</span>
+        </span>
+      </a>
+
+      <nav class="nav" aria-label="主导航">
+        <a class="nav__link" href="overview.html">总览</a>
+        <a class="nav__link" href="findings.html">异常</a>
+        <a class="nav__link is-active" href="run.html" aria-current="page">执行</a>
+        <a class="nav__link is-disabled" href="#" aria-disabled="true" tabindex="-1" title="样张未覆盖，正式重做时补齐">报告</a>
+        <a class="nav__link is-disabled" href="#" aria-disabled="true" tabindex="-1" title="样张未覆盖，正式重做时补齐">体系</a>
+        <a class="nav__link is-disabled" href="#" aria-disabled="true" tabindex="-1" title="样张未覆盖，正式重做时补齐">设置</a>
+      </nav>
+
+      <div class="masthead__context">
+        <span class="context-label">项目 / 环境</span>
+        <select class="select" aria-label="选择项目与环境">
+          <option>Growth · prod</option>
+          <option>Growth · beta</option>
+        </select>
+        <button class="btn btn--primary" type="button">立即巡检</button>
+        <button class="btn btn--quiet theme-toggle" type="button" data-theme-toggle aria-pressed="false">深色</button>
+      </div>
+    </div>
+  </header>
+
+  <main id="main" class="shell">
+
+    <nav class="breadcrumb" aria-label="面包屑">
+      <a href="overview.html">总览</a>
+      <span class="breadcrumb__sep">/</span>
+      <a href="overview.html">执行记录</a>
+      <span class="breadcrumb__sep">/</span>
+      <span>运行健康巡检 · prod</span>
+    </nav>
+
+    <header class="run-head">
+      <div>
+        <p class="kicker">执行详情 · Run evidence</p>
+        <h1 class="run-head__title">运行健康巡检 · prod</h1>
+        <p class="run-head__meta">
+          <span class="mono">0fdf8154-66d8-4dea-be41-ef69da49b0c7</span>
+          <span>2026-11-04 17:20:14</span>
+          <span>2.4 s</span>
+          <span>调度</span>
+          <span>Growth</span>
+        </p>
+      </div>
+      <div class="run-head__side">
+        <span class="status status--bad"><span class="status__glyph" aria-hidden="true">■</span><span>完成 · 有异常</span></span>
+        <span class="note">18 / 18 项已落库</span>
+      </div>
+    </header>
+
+    <section class="section section--tight" aria-labelledby="s-verdict">
+      <div class="section__head">
+        <span class="section__index">§ 01</span>
+        <h2 class="section__title" id="s-verdict">判定摘要</h2>
+        <span class="section__meta">双判一致 17 / 18</span>
+      </div>
+      <div class="section__body">
+        <div class="verdict">
+          <span class="verdict__label">本次结论</span>
+          <span class="verdict__value"><em>1 项异常</em> · 1 项注意 · 1 项待证</span>
+          <span class="verdict__meta">覆盖 18 / 18 · 工具调用 12 次 · 0 次告警风暴</span>
+        </div>
+        <div class="meter" role="img" aria-label="18 项结果：通过 15，注意 1，异常 1，待证 1">
+          <span class="meter__seg meter__seg--ok" style="width: 83.33%"></span>
+          <span class="meter__seg meter__seg--warn" style="width: 5.56%"></span>
+          <span class="meter__seg meter__seg--bad" style="width: 5.56%"></span>
+          <span class="meter__seg meter__seg--pending" style="width: 5.55%"></span>
+        </div>
+        <div class="meter__legend">
+          <span><b>15</b> 通过</span>
+          <span><b>1</b> 注意</span>
+          <span><b>1</b> 异常</span>
+          <span><b>1</b> 待证</span>
+          <span class="muted">颜色只做二次编码；形状/图标/文字先表达语义</span>
+        </div>
+      </div>
+    </section>
+
+    <section class="section" aria-labelledby="s-items">
+      <div class="section__head">
+        <span class="section__index">§ 02</span>
+        <h2 class="section__title" id="s-items">检查项判定</h2>
+        <span class="section__meta">展示 8 / 18 项</span>
+      </div>
+      <div class="section__body">
+        <div class="table-wrap">
+          <table class="table">
+            <caption class="sr-only">运行健康巡检的检查项判定与证据</caption>
+            <thead>
+              <tr>
+                <th scope="col">检查项</th>
+                <th scope="col">判定</th>
+                <th scope="col">Agent 判定</th>
+                <th scope="col">框架复核</th>
+                <th scope="col" class="num">证据</th>
+                <th scope="col">规则</th>
+                <th scope="col">Finding</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr class="">
+          <td><span class="table__title">management-svc 进程心跳</span><span class="table__sub">uptime / health</span></td>
+          <td><span class="status status--ok"><span class="status__glyph" aria-hidden="true">✓</span><span>Ok</span></span></td>
+          <td class="mono">Ok</td>
+          <td class="mono">healthy</td>
+          <td class="num">1 次 · 62 ms</td>
+          <td class="mono">v1</td>
+          <td>—</td>
+        </tr><tr class="is-selected">
+          <td><span class="table__title">死信 topic 到达量</span><span class="table__sub">growth.ekyc.dlq</span></td>
+          <td><span class="status status--bad"><span class="status__glyph" aria-hidden="true">■</span><span>异常</span></span></td>
+          <td class="mono">Abnormal</td>
+          <td class="mono">37</td>
+          <td class="num"><a href="#evidence-deadletter">3 次 · 1.1 s</a></td>
+          <td class="mono">v3</td>
+          <td><a href="findings.html">F-01</a></td>
+        </tr><tr class="">
+          <td><span class="table__title">CAP outbox 待投递积压</span><span class="table__sub">cap.published · Scheduled</span></td>
+          <td><span class="status status--warn"><span class="status__glyph" aria-hidden="true">▲</span><span>注意</span></span></td>
+          <td class="mono">Abnormal</td>
+          <td class="mono">680</td>
+          <td class="num">1 次 · 840 ms</td>
+          <td class="mono">v2</td>
+          <td><a href="findings.html">F-02</a></td>
+        </tr><tr class="">
+          <td><span class="table__title">工作流卡单</span><span class="table__sub">wf_instance · 30m</span></td>
+          <td><span class="status status--pending"><span class="status__glyph" aria-hidden="true">◇</span><span>待证</span></span></td>
+          <td class="mono">未判定</td>
+          <td class="mono">路径缺失</td>
+          <td class="num">1 次 · 1.2 s</td>
+          <td class="mono">v4</td>
+          <td>观察</td>
+        </tr><tr class="">
+          <td><span class="table__title">Kafka 原生消费组 lag</span><span class="table__sub">worker.*.native</span></td>
+          <td><span class="status status--ok"><span class="status__glyph" aria-hidden="true">✓</span><span>Ok</span></span></td>
+          <td class="mono">Ok</td>
+          <td class="mono">8,420</td>
+          <td class="num">1 次 · 1.0 s</td>
+          <td class="mono">v1</td>
+          <td>—</td>
+        </tr><tr class="">
+          <td><span class="table__title">gatekeeper 询问失败率</span><span class="table__sub">5m / tenant</span></td>
+          <td><span class="status status--ok"><span class="status__glyph" aria-hidden="true">✓</span><span>Ok</span></span></td>
+          <td class="mono">Ok</td>
+          <td class="mono">0.04</td>
+          <td class="num">1 次 · 900 ms</td>
+          <td class="mono">v1</td>
+          <td>—</td>
+        </tr><tr class="">
+          <td><span class="table__title">DWD 昨日分区</span><span class="table__sub">dwd_cdp_user_login_di</span></td>
+          <td><span class="status status--ok"><span class="status__glyph" aria-hidden="true">✓</span><span>Ok</span></span></td>
+          <td class="mono">Ok</td>
+          <td class="mono">1,204,331</td>
+          <td class="num">1 次 · 1.3 s</td>
+          <td class="mono">v2</td>
+          <td>—</td>
+        </tr><tr class="">
+          <td><span class="table__title">UMP 分片堆积</span><span class="table__sub">Pending · 10m</span></td>
+          <td><span class="status status--ok"><span class="status__glyph" aria-hidden="true">✓</span><span>Ok</span></span></td>
+          <td class="mono">Ok</td>
+          <td class="mono">0</td>
+          <td class="num">1 次 · 800 ms</td>
+          <td class="mono">v1</td>
+          <td>—</td>
+        </tr>
+            </tbody>
+          </table>
+        </div>
+        <p class="note" style="margin-top: 10px;">表中仅列出需要看的 8 项；其余 10 项均通过，未展开。</p>
+
+        <details class="evidence" id="evidence-deadletter" open>
+          <summary>证据 03 · 死信 topic 到达量 · 3 次工具调用</summary>
+          <div class="evidence__body">
+            <div class="evidence__grid">
+              <div>
+                <p class="evidence__label">检查项</p>
+                <p class="evidence__value">死信 topic 到达量（growth.ekyc.dlq）</p>
+              </div>
+              <div>
+                <p class="evidence__label">断言</p>
+                <p class="evidence__value"><code>$.value</code> Lte 0 · 窗口 15m · 级别 Critical</p>
+              </div>
+              <div>
+                <p class="evidence__label">Agent claim</p>
+                <p class="evidence__value">Abnormal · 37 条 · “10:40 后持续新增，疑似消费者重试耗尽”</p>
+              </div>
+              <div>
+                <p class="evidence__label">框架复核</p>
+                <p class="evidence__value">一致 · 37 ≤ 0 不成立 → Abnormal · Finding 已建</p>
+              </div>
+            </div>
+            <pre class="code">{
+  "metric": "ekyc_outbox_dead_letters",
+  "window": "15m",
+  "value": 37,
+  "series": [3, 5, 8, 11, 15, 22, 28, 31, 35, 37]
+}</pre>
+            <p class="note">工具：grafana__query_prometheus · thanos · 3 次调用 · 1.1 s · 结果 8 KB 内，未截断。</p>
+          </div>
+        </details>
+
+        <details class="evidence">
+          <summary>证据 02 · CAP outbox 待投递积压 · 1 次工具调用</summary>
+          <div class="evidence__body">
+            <div class="evidence__grid">
+              <div>
+                <p class="evidence__label">检查项</p>
+                <p class="evidence__value">CAP outbox 待投递积压（cap.published · Scheduled）</p>
+              </div>
+              <div>
+                <p class="evidence__label">断言</p>
+                <p class="evidence__value"><code>$.value</code> Lt 500 · 窗口 15m · 级别 Warning</p>
+              </div>
+              <div>
+                <p class="evidence__label">Agent claim</p>
+                <p class="evidence__value">Abnormal · 680 条 · “积压从 09:15 开始抬升”</p>
+              </div>
+              <div>
+                <p class="evidence__label">框架复核</p>
+                <p class="evidence__value">一致 · 680 &lt; 500 不成立 → Abnormal · Finding 已建</p>
+              </div>
+            </div>
+            <p class="note">工具：grafana__query_prometheus · thanos · 1 次调用 · 840 ms。</p>
+          </div>
+        </details>
+
+        <details class="evidence">
+          <summary>证据 04 · 工作流卡单 · 待证，为什么不是异常</summary>
+          <div class="evidence__body">
+            <div class="evidence__grid">
+              <div>
+                <p class="evidence__label">检查项</p>
+                <p class="evidence__value">工作流卡单（wf_instance · 30m）</p>
+              </div>
+              <div>
+                <p class="evidence__label">断言</p>
+                <p class="evidence__value"><code>$.count</code> Lte 0 · 级别 Critical</p>
+              </div>
+              <div>
+                <p class="evidence__label">Agent claim</p>
+                <p class="evidence__value">未给出可复核的 claim · 工具返回中没有 <code>$.count</code></p>
+              </div>
+              <div>
+                <p class="evidence__label">框架复核</p>
+                <p class="evidence__value">Error · 取值路径缺失 → 不建 Finding、不发 Lark，进日报观察</p>
+              </div>
+            </div>
+            <p class="note">
+              “待证”不是失败，也不等于健康；它表示这次没有足够证据下结论。补上查询或换工具后重跑即可。
+            </p>
+          </div>
+        </details>
+      </div>
+    </section>
+
+    <section class="section" aria-labelledby="s-snapshot">
+      <div class="section__head">
+        <span class="section__index">§ 03</span>
+        <h2 class="section__title" id="s-snapshot">快照与知识注入</h2>
+        <span class="section__meta">默认折叠 · 不把手册全文铺在页面上</span>
+      </div>
+      <div class="section__body">
+        <details class="evidence">
+          <summary>通用手册 · Growth 通用运维手册（7,563 字）</summary>
+          <div class="evidence__body">
+            <p class="evidence__value">服务拓扑、指标口径、告警升级路径；已注入本次 agent 会话。</p>
+            <p class="note">快照版本：2026-11-03 18:20 · 只读 · 完整内容见「体系 / 手册」。</p>
+          </div>
+        </details>
+        <details class="evidence">
+          <summary>专用手册 · 3 份引用（死信 / 积压与卡单 / CAP outbox）</summary>
+          <div class="evidence__body">
+            <p class="evidence__value">被检查单显式引用的专用知识，仅在本次执行注入。</p>
+            <p class="note">引用不跨 Project；快照里保留标题与版本，正文按需展开。</p>
+          </div>
+        </details>
+        <details class="evidence">
+          <summary>AI 摘要 · 模板兜底（未配置模型 key 时的降级）</summary>
+          <div class="evidence__body">
+            <p class="evidence__value">摘要标记 <code>FallbackUsed = 1</code>，不伪装成模型生成；日报里同样标注。</p>
+          </div>
+        </details>
+        <details class="evidence">
+          <summary>Lark 通知 · 本轮 0 条（mock 通道）</summary>
+          <div class="evidence__body">
+            <p class="evidence__value">v1 只写 LarkNotification 留痕，不发起真实请求；finding 建单时会显示在这里。</p>
+          </div>
+        </details>
+      </div>
+    </section>
+
+    <section class="section" aria-labelledby="s-observe">
+      <div class="section__head">
+        <span class="section__index">§ 04</span>
+        <h2 class="section__title" id="s-observe">观察</h2>
+        <span class="section__meta">不进告警</span>
+      </div>
+      <div class="section__body">
+        <div class="callout">
+          <div class="inline-actions" style="justify-content: space-between;">
+            <span class="status status--pending"><span class="status__glyph" aria-hidden="true">◇</span><span>待证</span><span class="status__sub">工作流卡单</span></span>
+            <span class="chip">日报观察</span>
+          </div>
+          <p class="callout__copy" style="margin-top: 10px;">
+            本轮 1 项因取值路径缺失无法复核。它不进 Finding、不发 Lark，但会在日报「观察」段出现，
+            避免“静默吞掉”。这也解释了为什么首页的“异常 1”与详情里的一行“待证”不是矛盾。
+          </p>
+        </div>
+      </div>
+    </section>
+    
+  </main>
+
+  <footer class="footer">
+    <div class="footer__inner">
+      <span>Growth Inspector · 视觉样张 v0.2</span>
+      <span>数据源 Grafana · thanos（样张数据，非真实巡检结果）</span>
+      <span>RPT-2026-11-04-01</span>
+    </div>
+  </footer>
+
+  <div class="variant-bar" role="navigation" aria-label="版面样张切换"><span class="variant-bar__label">版面</span><a class="" href="../v1/run.html" title="A 报告栏 · 1200 / 40px" aria-label="A 报告栏 · 1200 / 40px">A</a> <a class="" href="../v2/run.html" title="B 全宽 · 100% / 36px" aria-label="B 全宽 · 100% / 36px">B</a> <a class="is-active" aria-current="true" href="../v3/run.html" title="C 留白 · 1120 / 48px" aria-label="C 留白 · 1120 / 48px">C</a><span class="variant-bar__note">样张</span></div>
+  <script src="../assets/theme.js" defer></script>
+</body>
+</html>

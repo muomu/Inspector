@@ -1,0 +1,180 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>版面对比 A/B/C · Growth Inspector</title>
+  <link rel="stylesheet" href="assets/tokens.css">
+  <link rel="stylesheet" href="assets/base.css">
+  <style>
+    .compare {
+      max-width: 2400px;
+      margin: 0 auto;
+      padding: 32px 32px 48px;
+    }
+    .compare-head {
+      display: flex;
+      align-items: flex-end;
+      justify-content: space-between;
+      gap: 32px;
+      padding-bottom: 18px;
+      border-bottom: 2px solid var(--ink);
+    }
+    .compare-head h1 {
+      font-size: 34px;
+      line-height: 1.2;
+    }
+    .compare-head p {
+      max-width: 62ch;
+      color: var(--ink-soft);
+      font-size: 13px;
+    }
+    .compare-kicker {
+      margin-bottom: 6px;
+      color: var(--accent);
+      font-family: var(--mono);
+      font-size: 10px;
+      letter-spacing: .16em;
+      text-transform: uppercase;
+    }
+    .compare-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 24px;
+      margin-top: 24px;
+    }
+    .compare-col {
+      min-width: 0;
+    }
+    .compare-label {
+      display: flex;
+      align-items: baseline;
+      gap: 12px;
+      padding-bottom: 10px;
+      border-bottom: 1px solid var(--line-strong);
+    }
+    .compare-letter {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 30px;
+      height: 30px;
+      border: 1px solid var(--ink);
+      font-family: var(--mono);
+      font-size: 12px;
+    }
+    .compare-label h2 {
+      font-size: 24px;
+      font-weight: 400;
+    }
+    .compare-spec {
+      color: var(--muted);
+      font-family: var(--mono);
+      font-size: 11px;
+    }
+    .ruler {
+      position: relative;
+      height: 5px;
+      margin: 12px 0 4px;
+      background: var(--paper-sunken);
+      border: 1px solid var(--line);
+    }
+    .ruler span {
+      display: block;
+      height: 100%;
+      background: var(--accent);
+    }
+    .ruler-note {
+      color: var(--muted);
+      font-family: var(--mono);
+      font-size: 10px;
+    }
+    .shot {
+      display: block;
+      margin-top: 12px;
+      border: 1px solid var(--line);
+      background: var(--paper-raised);
+    }
+    .shot img {
+      display: block;
+      width: 100%;
+      height: auto;
+    }
+    .shot-caption {
+      margin: 6px 0 14px;
+      color: var(--muted);
+      font-family: var(--mono);
+      font-size: 10px;
+    }
+    .compare-note {
+      margin-top: 20px;
+      color: var(--muted);
+      font-size: 12px;
+    }
+    @media (max-width: 1200px) {
+      .compare-grid { grid-template-columns: 1fr; }
+      .compare-head { align-items: flex-start; flex-direction: column; }
+    }
+  </style>
+</head>
+<body>
+  <main class="compare">
+    <header class="compare-head">
+      <div>
+        <p class="compare-kicker">Layout comparison · 2026-11-04</p>
+        <h1>同一页，三种版面。</h1>
+      </div>
+      <p>
+        同一套组件、同一份数据、同一主题；只改宽度、行高、章节间距。
+        上排总览，下排执行详情；点图可打开可交互的整页。
+      </p>
+    </header>
+
+    <div class="compare-grid">
+      <section class="compare-col">
+        <div class="compare-label">
+          <span class="compare-letter">A</span>
+          <div><h2>报告栏</h2><p class="compare-spec">1200 · 40px · 48px</p></div>
+        </div>
+        <div class="ruler" aria-hidden="true"><span style="width:83.3%"></span></div>
+        <p class="ruler-note">内容 1200 / 视口 1440 · 居中</p>
+        <a class="shot" href="v1/overview.html"><img src="screenshots/a-overview.png" alt="A 报告栏总览"></a>
+        <p class="shot-caption">总览</p>
+        <a class="shot" href="v1/run.html"><img src="screenshots/a-run.png" alt="A 报告栏执行详情"></a>
+        <p class="shot-caption">执行详情 · 40px 行高</p>
+      </section>
+
+      <section class="compare-col">
+        <div class="compare-label">
+          <span class="compare-letter">B</span>
+          <div><h2>全宽</h2><p class="compare-spec">100% · 36px · 36px</p></div>
+        </div>
+        <div class="ruler" aria-hidden="true"><span style="width:100%"></span></div>
+        <p class="ruler-note">内容 1440 / 视口 1440 · 边到边</p>
+        <a class="shot" href="v2/overview.html"><img src="screenshots/b-overview.png" alt="B 全宽总览"></a>
+        <p class="shot-caption">总览</p>
+        <a class="shot" href="v2/run.html"><img src="screenshots/b-run.png" alt="B 全宽执行详情"></a>
+        <p class="shot-caption">执行详情 · 36px 行高</p>
+      </section>
+
+      <section class="compare-col">
+        <div class="compare-label">
+          <span class="compare-letter">C</span>
+          <div><h2>留白 · 已选</h2><p class="compare-spec">1120 · 48px · 88px</p></div>
+        </div>
+        <div class="ruler" aria-hidden="true"><span style="width:77.8%"></span></div>
+        <p class="ruler-note">内容 1120 / 视口 1440 · 居中</p>
+        <a class="shot" href="v3/overview.html"><img src="screenshots/c-overview.png" alt="C 留白总览"></a>
+        <p class="shot-caption">总览</p>
+        <a class="shot" href="v3/run.html"><img src="screenshots/c-run.png" alt="C 留白执行详情"></a>
+        <p class="shot-caption">执行详情 · 48px 行高</p>
+      </section>
+    </div>
+
+    <p class="compare-note">
+      差异集中在：内容宽度（A 1200 / B 全宽 / C 1120）、表格行高（40 / 36 / 44）、章节间距（48 / 36 / 64）。
+      右上角可切深色；右下角 A/B/C 可在页面内切换。
+    </p>
+  </main>
+</body>
+</html>

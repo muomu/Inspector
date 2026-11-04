@@ -42,6 +42,8 @@ builder.Services.AddGrowthInspectorManagement(builder.Configuration);
 
 builder.Services.AddScoped<IDailyReportGenerator, DailyReportGenerator>();
 builder.Services.AddScoped<DailyReportService>();
+// 顶栏项目 / 环境上下文：每次请求按 query 解析，默认落到项目默认环境。
+builder.Services.AddScoped<WorkspaceContextService>();
 builder.Services.AddHostedService<InspectionSchedulerHostedService>();
 
 var app = builder.Build();

@@ -1,5 +1,5 @@
 ﻿<!DOCTYPE html>
-<html lang="en">
+<html lang="zh-CN">
 
 <head>
     <meta charset="utf-8" />
@@ -8,6 +8,20 @@
     <ResourcePreloader />
     <link rel="stylesheet" href="@Assets["app.css"]" />
     <link rel="stylesheet" href="@Assets["GrowthInspector.Web.styles.css"]" />
+    <link rel="stylesheet" href="@Assets["css/design-system.css"]" />
+    <script>
+        (function () {
+            try {
+                var params = new URLSearchParams(window.location.search);
+                var requested = params.get("theme");
+                var stored = window.localStorage.getItem("gi-theme");
+                var theme = requested === "dark" || requested === "light" ? requested : stored;
+                if (theme === "dark") {
+                    document.documentElement.setAttribute("data-theme", "dark");
+                }
+            } catch (e) { }
+        })();
+    </script>
     <ImportMap />
     <HeadOutlet />
 </head>
@@ -15,6 +29,7 @@
 <body>
     <Routes />
     <ReconnectModal />
+    <script src="@Assets["js/theme.js"]"></script>
     <script src="@Assets["_framework/blazor.web.js"]"></script>
 </body>
 

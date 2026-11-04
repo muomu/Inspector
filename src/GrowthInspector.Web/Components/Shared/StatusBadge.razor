@@ -1,0 +1,17 @@
+@* 状态展示只消费 StatusPresenter 的结果；五态 + Running 的字形 / 文案 / 颜色都在那里定义。 *@
+<span class="@Value.CssClass" aria-label="@Value.AriaLabel">
+    @if (Value.Mode == StatusPresentationMode.Status && !string.IsNullOrEmpty(Value.Glyph))
+    {
+        <span class="status__glyph" aria-hidden="true">@Value.Glyph</span>
+    }
+    <span>@Value.Label</span>
+    @if (!string.IsNullOrWhiteSpace(Value.Sub))
+    {
+        <span class="status__sub">@Value.Sub</span>
+    }
+</span>
+
+@code {
+    [Parameter, EditorRequired]
+    public StatusPresentation Value { get; set; } = null!;
+}

@@ -1,0 +1,372 @@
+@page "/styleguide"
+@layout DesignLayout
+
+<PageTitle>视觉规范 · Growth Inspector</PageTitle>
+
+<header class="page-head">
+    <div class="page-head__main">
+        <p class="kicker">Design system · C 留白</p>
+        <h1 class="page-title">视觉规范</h1>
+        <p class="page-meta">
+            <span>冻结 v0.1</span>
+            <span>丝绸灰 / 玄色</span>
+            <span>1120 · 48 · 88</span>
+        </p>
+    </div>
+    <div class="page-head__actions">
+        <span class="freeze">C 已选 · 冻结</span>
+    </div>
+</header>
+
+<section class="section" aria-labelledby="sg-color">
+    <div class="section__head">
+        <span class="section__index">§ 01</span>
+        <h2 class="section__title" id="sg-color">色板</h2>
+        <span class="section__meta">浅色 / 深色 · 核心文本对已算对比度</span>
+    </div>
+    <div class="section__body">
+        <div class="swatch-group">
+            <h3>浅色 · 丝绸灰 / 玄色</h3>
+            <div class="swatch-grid">
+                @foreach (var swatch in LightSwatches)
+                {
+                    <div class="swatch">
+                        <span class="swatch__chip" style="background:@swatch.Value"></span>
+                        <span class="swatch__name">@swatch.Name</span>
+                        <span class="swatch__value">@swatch.Value</span>
+                        <span class="swatch__use">@swatch.Use</span>
+                    </div>
+                }
+            </div>
+        </div>
+
+        <div class="swatch-group">
+            <h3>深色 · 烟墨 / 月白</h3>
+            <div class="swatch-grid">
+                @foreach (var swatch in DarkSwatches)
+                {
+                    <div class="swatch">
+                        <span class="swatch__chip" style="background:@swatch.Value"></span>
+                        <span class="swatch__name">@swatch.Name</span>
+                        <span class="swatch__value">@swatch.Value</span>
+                        <span class="swatch__use">@swatch.Use</span>
+                    </div>
+                }
+            </div>
+        </div>
+
+        <p class="note" style="margin-top: 18px;">
+            对比度：浅色玄/丝绸灰 14.0:1、墨青 7.0:1、朱红 4.8:1、琥珀 4.8:1、通过绿 5.1:1；
+            深色月白/烟墨 11.6:1、墨青 7.3:1、朱红 5.5:1、琥珀 7.0:1、通过绿 7.1:1。
+            页面底叠加 16px 经纬 + 8px 斜纹（约 3%），不铺面板与正文。
+        </p>
+    </div>
+</section>
+
+<section class="section" aria-labelledby="sg-type">
+    <div class="section__head">
+        <span class="section__index">§ 02</span>
+        <h2 class="section__title" id="sg-type">字体</h2>
+        <span class="section__meta">宋体标题 / 无衬线正文 / 等宽数字</span>
+    </div>
+    <div class="section__body">
+        <div class="type-row">
+            <span class="type-row__label">Display · 46</span>
+            <div class="type-row__sample">
+                <p class="type-display">集群诊断，每一句结论都有证据。</p>
+                <p class="note">Noto Serif SC 400 · 只用于 h1/h2/报告题/大数字</p>
+            </div>
+        </div>
+        <div class="type-row">
+            <span class="type-row__label">H2 · 22</span>
+            <div class="type-row__sample">
+                <p class="type-h2">集群状态与需要处理的对象</p>
+            </div>
+        </div>
+        <div class="type-row">
+            <span class="type-row__label">Body · 16/28.8</span>
+            <div class="type-row__sample">
+                <p class="type-body">
+                    Agent 多轮调用 MCP 工具取证并给出 claim，框架按同一份 ToolCallLog 重算 ValuePath；
+                    一致才落 Ok / Abnormal，不一致或证据不足落 Error，只进日报观察。
+                </p>
+            </div>
+        </div>
+        <div class="type-row">
+            <span class="type-row__label">Mono · 13</span>
+            <div class="type-row__sample">
+                <p class="type-mono">0fdf8154-66d8-4dea-be41-ef69da49b0c7 · 17:20:14 · 2.4 s · 1,204,331</p>
+            </div>
+        </div>
+    </div>
+</section>
+
+<section class="section" aria-labelledby="sg-status">
+    <div class="section__head">
+        <span class="section__index">§ 03</span>
+        <h2 class="section__title" id="sg-status">状态</h2>
+        <span class="section__meta">5 态 + Running · 颜色是二次编码</span>
+    </div>
+    <div class="section__body">
+        <div class="status-row">
+            <span class="status status--ok"><span class="status__glyph" aria-hidden="true">✓</span>Ok</span>
+            <p class="status-row__desc">断言成立、框架复核一致；低饱和，不铺色。</p>
+        </div>
+        <div class="status-row">
+            <span class="status status--warn"><span class="status__glyph" aria-hidden="true">▲</span>注意</span>
+            <p class="status-row__desc">Warning 级异常；琥珀色，仍需处理。</p>
+        </div>
+        <div class="status-row">
+            <span class="status status--bad"><span class="status__glyph" aria-hidden="true">■</span>异常</span>
+            <p class="status-row__desc">Abnormal / Critical；唯一允许使用朱红的状态。</p>
+        </div>
+        <div class="status-row">
+            <span class="status status--pending"><span class="status__glyph" aria-hidden="true">◇</span>待证</span>
+            <p class="status-row__desc">Error / Mismatch / 证据不足；不是故障，进日报观察。</p>
+        </div>
+        <div class="status-row">
+            <span class="status status--idle"><span class="status__glyph" aria-hidden="true">—</span>中性</span>
+            <p class="status-row__desc">Pending / Skipped / 信息型；不参与告警。</p>
+        </div>
+        <div class="status-row">
+            <span class="status status--running"><span class="status__glyph" aria-hidden="true">◉</span>运行中</span>
+            <p class="status-row__desc">accent 脉冲；不占用状态色，reduced-motion 下停用。</p>
+        </div>
+
+        <div class="actions" style="margin-top: 20px;">
+            <StatusBadge Value="@StatusPresenter.FromFinding(FindingStatus.Open)" />
+            <span class="chip chip--danger">Critical</span>
+            <span class="chip chip--warning">Warning</span>
+            <StatusBadge Value="@StatusPresenter.FromFinding(FindingStatus.Resolved)" />
+            <span class="status status--pending"><span class="status__glyph" aria-hidden="true">◇</span>待证<span class="status__sub">工作流卡单</span></span>
+        </div>
+    </div>
+</section>
+
+<section class="section" aria-labelledby="sg-controls">
+    <div class="section__head">
+        <span class="section__index">§ 04</span>
+        <h2 class="section__title" id="sg-controls">控件与表格</h2>
+        <span class="section__meta">原生控件 · 48px 行高</span>
+    </div>
+    <div class="section__body">
+        <div class="form-row">
+            <label class="field">
+                <span class="field__label">检查单名称</span>
+                <input class="input" placeholder="例如：运行健康巡检" />
+            </label>
+            <label class="field">
+                <span class="field__label">频率</span>
+                <select class="select">
+                    <option>每小时</option>
+                    <option>每天 10:00</option>
+                </select>
+            </label>
+        </div>
+
+        <div class="actions">
+            <button class="btn btn--primary" type="button">立即巡检</button>
+            <button class="btn btn--ghost" type="button">查看证据</button>
+            <button class="btn btn--quiet" type="button">重置</button>
+            <span class="note">按钮、输入框、选择器都使用原生控件，不用自绘弹层。</span>
+        </div>
+
+        <div class="table-wrap" style="margin-top: 26px;" role="region" aria-label="检查项判定示例" tabindex="0">
+            <table class="table">
+                <caption class="sr-only">检查项判定示例</caption>
+                <thead>
+                    <tr>
+                        <th scope="col">检查项</th>
+                        <th scope="col">判定</th>
+                        <th scope="col">证据</th>
+                        <th scope="col" class="num">工具 / 耗时</th>
+                        <th scope="col">规则</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td><span class="table__title">management-svc 进程心跳</span><span class="table__sub">uptime / health</span></td>
+                        <td><span class="status status--ok"><span class="status__glyph" aria-hidden="true">✓</span>Ok</span></td>
+                        <td class="mono">healthy</td>
+                        <td class="num">1 次 · 62 ms</td>
+                        <td class="mono">v1</td>
+                    </tr>
+                    <tr>
+                        <td><span class="table__title">死信 topic 到达量</span><span class="table__sub">growth.ekyc.dlq</span></td>
+                        <td><span class="status status--bad"><span class="status__glyph" aria-hidden="true">■</span>异常</span></td>
+                        <td class="mono">37</td>
+                        <td class="num">3 次 · 1.1 s</td>
+                        <td class="mono">v3</td>
+                    </tr>
+                    <tr>
+                        <td><span class="table__title">工作流卡单</span><span class="table__sub">wf_instance · 30m</span></td>
+                        <td><span class="status status--pending"><span class="status__glyph" aria-hidden="true">◇</span>待证</span></td>
+                        <td class="mono">路径缺失</td>
+                        <td class="num">1 次 · 1.2 s</td>
+                        <td class="mono">v4</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+</section>
+
+<section class="section" aria-labelledby="sg-cluster">
+    <div class="section__head">
+        <span class="section__index">§ 05</span>
+        <h2 class="section__title" id="sg-cluster">集群节点</h2>
+        <span class="section__meta">健康只留名字 · 异常显示指标</span>
+    </div>
+    <div class="section__body">
+        <div class="node-grid node-grid--services">
+            <div class="node"><span class="node__glyph" aria-hidden="true">✓</span><div class="node__body"><span class="node__name">management-svc</span></div></div>
+            <div class="node"><span class="node__glyph" aria-hidden="true">✓</span><div class="node__body"><span class="node__name">openapi-svc</span></div></div>
+            <div class="node node--warn"><span class="node__glyph" aria-hidden="true">▲</span><div class="node__body"><span class="node__name">growth-worker</span><span class="node__meta">CAP outbox 680</span></div></div>
+            <div class="node node--bad"><span class="node__glyph" aria-hidden="true">■</span><div class="node__body"><span class="node__name">ump-worker</span><span class="node__meta">死信 37 / 15m</span></div></div>
+            <div class="node"><span class="node__glyph" aria-hidden="true">✓</span><div class="node__body"><span class="node__name">materialize-worker</span></div></div>
+            <div class="node"><span class="node__glyph" aria-hidden="true">✓</span><div class="node__body"><span class="node__name">callmedia-svc</span></div></div>
+        </div>
+        <div class="node-grid node-grid--deps">
+            <div class="node"><span class="node__glyph" aria-hidden="true">✓</span><div class="node__body"><span class="node__name">MySQL</span></div></div>
+            <div class="node"><span class="node__glyph" aria-hidden="true">✓</span><div class="node__body"><span class="node__name">Redis</span></div></div>
+            <div class="node"><span class="node__glyph" aria-hidden="true">✓</span><div class="node__body"><span class="node__name">Kafka</span></div></div>
+            <div class="node"><span class="node__glyph" aria-hidden="true">✓</span><div class="node__body"><span class="node__name">StarRocks</span></div></div>
+        </div>
+    </div>
+</section>
+
+<section class="section" aria-labelledby="sg-content">
+    <div class="section__head">
+        <span class="section__index">§ 06</span>
+        <h2 class="section__title" id="sg-content">内容块</h2>
+        <span class="section__meta">Finding / 证据 / 空态</span>
+    </div>
+    <div class="section__body">
+        <div class="finding finding--critical">
+            <div class="finding__severity finding__severity--critical">
+                <span aria-hidden="true">■</span> Critical
+            </div>
+            <div class="finding__main">
+                <h3 class="finding__title">死信 topic 到达量超阈值</h3>
+                <p class="finding__meta">
+                    <span class="mono">growth.ekyc.dlq</span>
+                    <span>37 条 / 15m</span>
+                    <span>规则 v3</span>
+                    <span>首次 10:42</span>
+                </p>
+            </div>
+            <div class="finding__side">
+                <StatusBadge Value="@StatusPresenter.FromFinding(FindingStatus.Open)" />
+                <a href="#sg-evidence">查看证据 →</a>
+            </div>
+        </div>
+
+        <details class="evidence" id="sg-evidence" open>
+            <summary>证据 · 死信 topic 到达量 · 3 次工具调用</summary>
+            <div class="evidence__body">
+                <div class="evidence__grid">
+                    <div>
+                        <p class="evidence__label">检查项</p>
+                        <p class="evidence__value">死信 topic 到达量（growth.ekyc.dlq）</p>
+                    </div>
+                    <div>
+                        <p class="evidence__label">断言</p>
+                        <p class="evidence__value"><code>$.value</code> Lte 0 · 窗口 15m · 级别 Critical</p>
+                    </div>
+                    <div>
+                        <p class="evidence__label">Agent claim</p>
+                        <p class="evidence__value">Abnormal · 37 条 · 疑似消费者重试耗尽</p>
+                    </div>
+                    <div>
+                        <p class="evidence__label">框架复核</p>
+                        <p class="evidence__value">一致 · 37 ≤ 0 不成立 → Abnormal · Finding 已建</p>
+                    </div>
+                </div>
+                <pre class="code">{
+  "metric": "ekyc_outbox_dead_letters",
+  "window": "15m",
+  "value": 37
+}</pre>
+            </div>
+        </details>
+
+        <div class="two-col" style="margin-top: 26px;">
+            <div class="callout callout--quote">
+                <h3 class="callout__title">Agent 取证，框架重算；两边不一致就不下结论。</h3>
+                <p class="callout__copy">
+                    一致才落 Ok / Abnormal；不一致或证据不足落 Error，不建 Finding、不发 Lark，只进日报观察。
+                </p>
+            </div>
+            <div class="empty empty--ok">
+                <span class="empty__glyph" aria-hidden="true">✓</span>
+                <h3 class="empty__title">本次巡检未发现异常</h3>
+                <p class="empty__copy">没有异常时，页面也应该是一份可读的报告，而不是一块空白。</p>
+            </div>
+        </div>
+    </div>
+</section>
+
+<section class="section" aria-labelledby="sg-space">
+    <div class="section__head">
+        <span class="section__index">§ 07</span>
+        <h2 class="section__title" id="sg-space">间距与圆角</h2>
+        <span class="section__meta">4px base · 2px radius</span>
+    </div>
+    <div class="section__body">
+        <div class="space-row"><span>4px</span><span class="space-row__bar" style="width: 4px;"></span><span>--s-1</span></div>
+        <div class="space-row"><span>8px</span><span class="space-row__bar" style="width: 8px;"></span><span>--s-2</span></div>
+        <div class="space-row"><span>16px</span><span class="space-row__bar" style="width: 16px;"></span><span>--s-4</span></div>
+        <div class="space-row"><span>24px</span><span class="space-row__bar" style="width: 24px;"></span><span>--s-6</span></div>
+        <div class="space-row"><span>48px</span><span class="space-row__bar" style="width: 48px;"></span><span>--row</span></div>
+        <div class="space-row"><span>88px</span><span class="space-row__bar" style="width: 88px;"></span><span>--section-gap</span></div>
+
+        <div class="radius-row" style="margin-top: 24px;">
+            <span class="radius-chip radius-chip--2">2px</span>
+            <span class="radius-chip radius-chip--3">3px</span>
+            <span class="radius-chip radius-chip--999">pill</span>
+            <span class="note" style="align-self: center;">页面用 1px 规则线，不用大圆角卡片。</span>
+        </div>
+    </div>
+</section>
+
+<section class="section" aria-labelledby="sg-a11y">
+    <div class="section__head">
+        <span class="section__index">§ 08</span>
+        <h2 class="section__title" id="sg-a11y">无障碍</h2>
+        <span class="section__meta">WCAG 2.2 AA</span>
+    </div>
+    <div class="section__body">
+        <div class="callout">
+            <p class="callout__copy">
+                正文 4.5:1、非文本 3:1、指针目标 24×24；`lang="zh-CN"`；所有 `th` 带 `scope`；
+                滚动表格区加 `tabindex="0"` 与 `role="region"`；颜色永不作为唯一手段；支持 200% 缩放。
+            </p>
+        </div>
+    </div>
+</section>
+
+@code {
+    private static readonly (string Name, string Value, string Use)[] LightSwatches =
+    [
+        ("paper", "#E6E7E4", "页面底 · 丝绸灰"),
+        ("paper-raised", "#EFEFEC", "面板"),
+        ("ink", "#1A1A1A", "主文字 · 玄色"),
+        ("muted", "#5B6670", "次要文字"),
+        ("accent", "#14535A", "链接 / 激活 · 墨青"),
+        ("danger", "#B23A2F", "仅异常"),
+        ("warning", "#8A5A00", "注意"),
+        ("ok", "#2E6B45", "通过")
+    ];
+
+    private static readonly (string Name, string Value, string Use)[] DarkSwatches =
+    [
+        ("paper", "#242B36", "页面底 · 烟墨"),
+        ("paper-raised", "#2C3441", "面板"),
+        ("ink", "#D6ECF0", "主文字 · 月白"),
+        ("muted", "#A7B3B8", "次要文字"),
+        ("accent", "#8FC3C3", "链接 / 激活"),
+        ("danger", "#E08A80", "仅异常"),
+        ("warning", "#D6B06A", "注意"),
+        ("ok", "#8EC3A0", "通过")
+    ];
+}

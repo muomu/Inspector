@@ -1,130 +1,491 @@
 @page "/"
+@layout DesignLayout
 @inject IDbContextFactory<GrowthInspectorDbContext> DbFactory
+@inject NavigationManager Nav
+@inject WorkspaceContextService Workspace
 
 <PageTitle>总览 · Growth Inspector</PageTitle>
 
-<h1>巡检总览</h1>
-<p class="page-subtitle">
-    动态 Runbook 巡检框架骨架：<strong>手册</strong>只承载知识，<strong>检查单</strong>承载调度，
-    <strong>检查项</strong>承载判定；MCP 是唯一数据源接入方式。
-</p>
+<header class="page-head">
+    <div class="page-head__main">
+        <p class="kicker">集群诊断 · Cluster diagnosis</p>
+        <h1 class="page-title">@pageTitle</h1>
+        <p class="page-meta">
+            @if (workspace.Current is not null)
+            {
+                <span>@workspace.Current.ProjectName</span>
+                <span>@workspace.Current.EnvironmentName</span>
+            }
+            @if (clusterRun is not null)
+            {
+                <span>@clusterRun.StartedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm")</span>
+                <span>@clusterRun.Results.Count 检查项</span>
+            }
+        </p>
+    </div>
+    <div class="page-head__actions">
+        <a class="btn btn--quiet" href="@RunsHref">查看执行详情</a>
+    </div>
+</header>
 
 @if (loadError is not null)
 {
-    <p class="error-text">加载失败：@loadError</p>
+    <div class="callout" style="margin-top: 40px;">
+        <h2 class="callout__title">总览加载失败</h2>
+        <p class="callout__copy">@loadError</p>
+    </div>
 }
-
-<div class="stat-grid">
-    <div class="stat-card"><span>项目</span><strong>@projectCount</strong></div>
-    <div class="stat-card"><span>检查单</span><strong>@checklistCount</strong></div>
-    <div class="stat-card"><span>未恢复异常</span><strong>@openFindingCount</strong></div>
-    <div class="stat-card"><span>今日执行</span><strong>@todayRunCount</strong></div>
-</div>
-
-<h2 class="section-title">今日执行状态</h2>
-<div class="stat-grid compact">
-    <div class="stat-card"><span>成功</span><strong>@todaySucceededCount</strong></div>
-    <div class="stat-card"><span>失败</span><strong>@todayFailedCount</strong></div>
-    <div class="stat-card"><span>Skipped</span><strong>@todaySkippedCount</strong></div>
-    <div class="stat-card"><span>Canceled</span><strong>@todayCanceledCount</strong></div>
-    <div class="stat-card"><span>等待中 / 执行中</span><strong>@todayActiveCount</strong></div>
-</div>
-
-<h2 class="section-title">最近执行</h2>
-@if (recentRuns.Count == 0)
+else if (workspace.Current is null)
 {
-    <div class="empty">
-        还没有执行记录。先到 <a href="/settings">设置</a> 创建项目与环境，
-        再到 <a href="/runbooks">运维手册</a> 写一份手册、到 <a href="/checklists">检查单</a> 建一张检查单。
+    <div class="empty" style="margin-top: 40px;">
+        <span class="empty__glyph" aria-hidden="true">◇</span>
+        <h2 class="empty__title">还没有项目 / 环境</h2>
+        <p class="empty__copy">
+            先到 <a href="/settings">设置</a> 创建项目与环境，再导入一份检查单；没有数据时总览保持空态，不伪造 Ok。
+        </p>
     </div>
 }
 else
 {
-    <div class="table-scroll">
-        <table class="data wide">
-            <thead>
-                <tr>
-                    <th>检查单</th>
-                    <th>环境</th>
-                    <th>状态</th>
-                    <th>开始时间</th>
-                    <th>耗时</th>
-                    <th>Token</th>
-                    <th>触发方式</th>
-                </tr>
-            </thead>
-            <tbody>
-                @foreach (var run in recentRuns)
+    @if (clusterRun is not null && totalNodes > 0)
+    {
+        <section class="cluster-hero" aria-labelledby="cluster-title">
+            <h2 class="cluster-title" id="cluster-title">
+                集群 <span class="nowrap">@okCount / @totalNodes 正常</span>；@if (attentionCount > 0)
                 {
-                    <tr>
-                        <td>
-                            <a href="/runs/@run.Id">@NameOrMissing(run.Checklist?.Name)</a>
-                            @if (run.Checklist?.IsArchived == true)
-                            {
-                                <span class="badge archived">已归档</span>
-                            }
-                        </td>
-                        <td>
-                            @NameOrMissing(run.Environment?.Name)
-                            @if (run.Environment?.IsArchived == true)
-                            {
-                                <span class="badge archived">已归档</span>
-                            }
-                        </td>
-                        <td><span class="@StatusClass(run.Status)">@StatusText(run.Status)</span></td>
-                        <td class="narrow-num">@run.StartedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss")</td>
-                        <td class="narrow-num">@FormatDuration(run.DurationMs)</td>
-                        <td class="narrow-num">@(run.PromptTokens + run.CompletionTokens)</td>
-                        <td>@TriggerText(run.Trigger)</td>
-                    </tr>
+                    <span class="nowrap"><em class="@(dangerCount > 0 ? "is-danger" : "is-warning")">@attentionCount 个对象</em>需要处理</span>
                 }
-            </tbody>
-        </table>
-    </div>
+                else if (pendingCount > 0)
+                {
+                    <span class="nowrap">@pendingCount 个对象待证</span>
+                }
+                else if (neutralCount > 0)
+                {
+                    <span class="nowrap">@neutralCount 个对象为信息级结果</span>
+                }
+                else
+                {
+                    <span class="nowrap">没有需要处理的对象</span>
+                }。
+            </h2>
+            <p class="cluster-copy">@ClusterCopy</p>
+            @if (firstRunError is not null)
+            {
+                <p class="note cluster-note">执行错误摘录：@Shorten(firstRunError, 140)</p>
+            }
+            <div class="cluster-stats">
+                <span class="cluster-stat"><strong>@okCount</strong>正常</span>
+                <span class="cluster-stat cluster-stat--warn"><strong>@warningCount</strong>注意</span>
+                <span class="cluster-stat cluster-stat--bad"><strong>@dangerCount</strong>异常</span>
+                <span class="cluster-stat cluster-stat--pending"><strong>@pendingCount</strong>待证</span>
+                @if (neutralCount > 0)
+                {
+                    <span class="cluster-stat"><strong>@neutralCount</strong>中性</span>
+                }
+                <span class="cluster-stat__note">
+                    @totalNodes 个对象 · 最近检查 @clusterRun.StartedAt.ToLocalTime().ToString("HH:mm")
+                </span>
+            </div>
+            <div class="cluster-meter" role="img" aria-label="@ClusterMeterLabel">
+                @if (okCount > 0)
+                {
+                    <span class="cluster-meter__seg cluster-meter__seg--ok" style="@MeterWidth(okCount)"></span>
+                }
+                @if (warningCount > 0)
+                {
+                    <span class="cluster-meter__seg cluster-meter__seg--warn" style="@MeterWidth(warningCount)"></span>
+                }
+                @if (dangerCount > 0)
+                {
+                    <span class="cluster-meter__seg cluster-meter__seg--bad" style="@MeterWidth(dangerCount)"></span>
+                }
+                @if (pendingCount > 0)
+                {
+                    <span class="cluster-meter__seg cluster-meter__seg--pending" style="@MeterWidth(pendingCount)"></span>
+                }
+                @if (neutralCount > 0)
+                {
+                    <span class="cluster-meter__seg cluster-meter__seg--idle" style="@MeterWidth(neutralCount)"></span>
+                }
+            </div>
+        </section>
+    }
+
+    <section class="section" aria-labelledby="s-cluster">
+        <div class="section__head">
+            <span class="section__index">§ 01</span>
+            <h2 class="section__title" id="s-cluster">集群状态</h2>
+            <span class="section__meta">@workspace.Current.ProjectName · @workspace.Current.EnvironmentName</span>
+        </div>
+        <div class="section__body">
+            @if (serviceNodes.Count == 0 && dependencyNodes.Count == 0)
+            {
+                <div class="empty">
+                    <span class="empty__glyph" aria-hidden="true">◇</span>
+                    <h3 class="empty__title">还没有集群检查数据</h3>
+                    <p class="empty__copy">
+                        该环境还没有包含「进程心跳」或「连通性」检查项的执行记录。
+                        先到 <a href="@ChecklistsHref">检查单</a> 触发一次巡检；没有结果时按待证展示，不伪造 Ok。
+                    </p>
+                </div>
+            }
+            else
+            {
+                @if (serviceNodes.Count > 0)
+                {
+                    <div class="cluster-group">
+                        <div class="cluster-group__head">
+                            <h3>服务</h3>
+                            <span>@serviceNodes.Count</span>
+                        </div>
+                        <div class="node-grid node-grid--services">
+                            @foreach (var node in serviceNodes)
+                            {
+                                <div class="node @node.Status.NodeModifierClass">
+                                    <span class="node__glyph" aria-hidden="true">@node.Status.Glyph</span>
+                                    <div class="node__body">
+                                        <span class="node__name">@node.Name</span>
+                                        @if (node.Meta is not null)
+                                        {
+                                            <span class="node__meta">@node.Meta</span>
+                                        }
+                                        <span class="sr-only">状态：@node.Status.Label</span>
+                                    </div>
+                                </div>
+                            }
+                        </div>
+                    </div>
+                }
+                @if (dependencyNodes.Count > 0)
+                {
+                    <div class="cluster-group">
+                        <div class="cluster-group__head">
+                            <h3>依赖</h3>
+                            <span>@dependencyNodes.Count</span>
+                        </div>
+                        <div class="node-grid node-grid--deps">
+                            @foreach (var node in dependencyNodes)
+                            {
+                                <div class="node @node.Status.NodeModifierClass">
+                                    <span class="node__glyph" aria-hidden="true">@node.Status.Glyph</span>
+                                    <div class="node__body">
+                                        <span class="node__name">@node.Name</span>
+                                        @if (node.Meta is not null)
+                                        {
+                                            <span class="node__meta">@node.Meta</span>
+                                        }
+                                        <span class="sr-only">状态：@node.Status.Label</span>
+                                    </div>
+                                </div>
+                            }
+                        </div>
+                    </div>
+                }
+            }
+        </div>
+    </section>
+
+    <section class="section" aria-labelledby="s-findings">
+        <div class="section__head">
+            <span class="section__index">§ 02</span>
+            <h2 class="section__title" id="s-findings">需要处理</h2>
+            <span class="section__meta">@openFindingCount 条未恢复</span>
+        </div>
+        <div class="section__body">
+            @if (openFindings.Count == 0)
+            {
+                <div class="@EmptyFindingsClass">
+                    <span class="empty__glyph" aria-hidden="true">@(allHealthy ? "✓" : "◇")</span>
+                    <h3 class="empty__title">@(allHealthy ? "本次巡检未发现异常" : "没有未恢复异常")</h3>
+                    <p class="empty__copy">@EmptyFindingsCopy</p>
+                </div>
+            }
+            else
+            {
+                @foreach (var row in openFindings)
+                {
+                    <article class="finding @row.Severity.FindingModifierClass">
+                        <div class="finding__severity @row.Severity.SeverityModifierClass">
+                            <span aria-hidden="true">@row.Severity.Glyph</span> @row.Severity.Label
+                        </div>
+                        <div class="finding__main">
+                            <h3 class="finding__title">@row.Finding.Title</h3>
+                            <p class="finding__meta">
+                                @if (!string.IsNullOrWhiteSpace(row.Finding.Message))
+                                {
+                                    <span>@Shorten(row.Finding.Message!, 96)</span>
+                                }
+                                <span>规则 v@(row.Finding.RuleVersion)</span>
+                                <span>首次 @row.Finding.FirstSeenAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm")</span>
+                                <span>最近 @row.Finding.LastSeenAt.ToLocalTime().ToString("MM-dd HH:mm")</span>
+                            </p>
+                        </div>
+                        <div class="finding__side">
+                            <StatusBadge Value="@StatusPresenter.FromFinding(FindingStatus.Open)" />
+                            <a href="@FindingsHref">查看异常 →</a>
+                        </div>
+                    </article>
+                }
+                @if (openFindingCount > openFindings.Count)
+                {
+                    <p class="note" style="margin-top: 14px;">
+                        共 @openFindingCount 条未恢复异常，这里按严重级只显示前 @openFindings.Count 条；完整列表见异常页。
+                    </p>
+                }
+                <p class="note" style="margin-top: 14px;">
+                    只有「断言不成立 + 框架复核一致」才进入 Finding；Error / Mismatch 只进日报观察。
+                </p>
+            }
+        </div>
+    </section>
+
+    <section class="section" aria-labelledby="s-recent">
+        <div class="section__head">
+            <span class="section__index">§ 03</span>
+            <h2 class="section__title" id="s-recent">最近执行</h2>
+            <span class="section__meta"><a href="@RunsHref">查看执行详情 →</a></span>
+        </div>
+        <div class="section__body">
+            @if (recentRuns.Count == 0)
+            {
+                <div class="empty">
+                    <span class="empty__glyph" aria-hidden="true">◇</span>
+                    <h3 class="empty__title">还没有执行记录</h3>
+                    <p class="empty__copy">
+                        先到 <a href="@ChecklistsHref">检查单</a> 手动触发一次执行；执行结束后这里会列出最近几轮。
+                    </p>
+                </div>
+            }
+            else
+            {
+                <div class="run-list">
+                    @foreach (var row in recentRuns)
+                    {
+                        <a class="run-row" href="@($"/runs/{row.Run.Id}")">
+                            <span class="run-row__time" title="@row.Run.StartedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss")">
+                                @row.Run.StartedAt.ToLocalTime().ToString("HH:mm")
+                            </span>
+                            <span class="run-row__name">@row.ChecklistName</span>
+                            <span class="run-row__env">@row.EnvironmentName</span>
+                            <span class="run-row__status">
+                                <StatusBadge Value="@StatusPresenter.FromRun(row.Run.Status)" />
+                            </span>
+                            <span class="run-row__arrow" aria-hidden="true">→</span>
+                        </a>
+                    }
+                </div>
+            }
+        </div>
+    </section>
 }
 
 @code {
-    private int projectCount;
-    private int checklistCount;
-    private int openFindingCount;
-    private int todayRunCount;
-    private int todaySucceededCount;
-    private int todayFailedCount;
-    private int todaySkippedCount;
-    private int todayCanceledCount;
-    private int todayActiveCount;
-    private List<ChecklistRun> recentRuns = [];
+    private WorkspaceContext workspace = WorkspaceContext.Empty;
     private string? loadError;
+    private string pageTitle = "集群诊断";
+    private ChecklistRun? clusterRun;
+    private List<RunRow> recentRuns = [];
+    private List<FindingRow> openFindings = [];
+    private List<ClusterNodeView> serviceNodes = [];
+    private List<ClusterNodeView> dependencyNodes = [];
+    private int totalNodes;
+    private int okCount;
+    private int warningCount;
+    private int dangerCount;
+    private int pendingCount;
+    private int neutralCount;
+    private int attentionCount;
+    private int otherPendingCount;
+    private int otherAttentionCount;
+    private int expectedItemCount;
+    private int openFindingCount;
+    private bool allExpectedResultsPresent;
+    private bool allHealthy;
+    private string? firstRunError;
+
+    private string ContextQuery => workspace.QuerySuffix;
+    private string RunsHref => $"/runs{ContextQuery}";
+    private string FindingsHref => $"/findings{ContextQuery}";
+    private string ChecklistsHref => $"/checklists{ContextQuery}";
+
+    private string ClusterMeterLabel =>
+        $"{totalNodes} 个对象：{okCount} 正常、{warningCount} 注意、{dangerCount} 异常、{pendingCount} 待证"
+        + (neutralCount > 0 ? $"、{neutralCount} 中性" : string.Empty);
+
+    private string ClusterCopy
+    {
+        get
+        {
+            if (clusterRun is null)
+            {
+                return string.Empty;
+            }
+
+            var time = clusterRun.StartedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm");
+            var counts = $"{okCount} 个正常、{warningCount} 个注意、{dangerCount} 个异常、{pendingCount} 个待证";
+            if (neutralCount > 0)
+            {
+                counts += $"、{neutralCount} 个中性";
+            }
+
+            var parts = new List<string>
+            {
+                $"最近一次集群检查在 {time}，{totalNodes} 个对象中 {counts}。",
+            };
+
+            if (clusterRun.Status != RunStatus.Succeeded)
+            {
+                parts.Add($"该轮执行状态为「{StatusPresenter.FromRun(clusterRun.Status).Label}」，未完成项按待证处理，不能读作健康。");
+            }
+
+            if (!allExpectedResultsPresent)
+            {
+                parts.Add($"本轮检查项结果不完整（应执行 {expectedItemCount} 项，实际 {clusterRun.Results.Count} 项），缺失项按待证处理。");
+            }
+
+            if (pendingCount == totalNodes && totalNodes > 0)
+            {
+                parts.Add("执行结果没有形成判定，统一按待证处理；待证不是故障，先看执行错误或等待数据源恢复。");
+            }
+            else if (attentionCount == 0
+                && pendingCount == 0
+                && neutralCount == 0
+                && otherPendingCount == 0
+                && otherAttentionCount == 0
+                && allExpectedResultsPresent
+                && clusterRun.Status == RunStatus.Succeeded)
+            {
+                parts.Add("没有需要处理的对象。");
+            }
+
+            if (otherPendingCount > 0)
+            {
+                parts.Add($"另有 {otherPendingCount} 项流水线检查待证，未计入 {totalNodes} 个对象。");
+            }
+
+            if (otherAttentionCount > 0)
+            {
+                parts.Add($"另有 {otherAttentionCount} 项流水线检查需要注意 / 异常。");
+            }
+
+            if (openFindingCount > 0)
+            {
+                parts.Add($"当前 {openFindingCount} 条未恢复异常。");
+            }
+
+            return string.Concat(parts);
+        }
+    }
+
+    private string EmptyFindingsClass => allHealthy ? "empty empty--ok" : "empty";
+
+    private string EmptyFindingsCopy
+    {
+        get
+        {
+            if (clusterRun is null)
+            {
+                return "还没有集群检查数据；先触发一次巡检，再判断是否需要处理。";
+            }
+
+            if (allHealthy)
+            {
+                return "所有对象均正常，且没有未恢复异常。";
+            }
+
+            if (pendingCount > 0 && attentionCount == 0)
+            {
+                return $"{pendingCount} 个对象待证，未形成判定；待证不是故障，不进 Finding，先看执行错误。";
+            }
+
+            if (attentionCount > 0)
+            {
+                return $"有 {attentionCount} 个对象需要处理，但当前没有未恢复 Finding；先看执行详情里的证据。";
+            }
+
+            if (otherAttentionCount > 0)
+            {
+                return $"另有 {otherAttentionCount} 项流水线检查需要注意 / 异常，但当前没有未恢复 Finding；先看执行详情里的证据。";
+            }
+
+            if (otherPendingCount > 0)
+            {
+                return $"对象状态正常，但另有 {otherPendingCount} 项流水线检查待证；待证不是故障，不进 Finding。";
+            }
+
+            if (clusterRun.Status != RunStatus.Succeeded)
+            {
+                return "本轮执行未完成，未完成项按待证处理，不能给出全清结论。";
+            }
+
+            if (!allExpectedResultsPresent)
+            {
+                return $"本轮检查项结果不完整（应执行 {expectedItemCount} 项，实际 {clusterRun.Results.Count} 项），缺失项按待证处理，不能给出全清结论。";
+            }
+
+            if (neutralCount > 0)
+            {
+                return $"{neutralCount} 个对象是信息级结果，不参与判定，也不产生 Finding。";
+            }
+
+            return "当前没有未恢复异常。";
+        }
+    }
 
     protected override async Task OnInitializedAsync()
     {
         try
         {
+            workspace = await Workspace.ResolveAsync(WorkspaceContextService.ReadQueryValue(Nav));
+            if (workspace.Current is null)
+            {
+                return;
+            }
+
+            var current = workspace.Current;
             await using var db = await DbFactory.CreateDbContextAsync();
-            projectCount = await db.Projects.CountAsync();
-            checklistCount = await db.Checklists.CountAsync();
-            openFindingCount = await db.Findings.CountAsync(x => x.Status == FindingStatus.Open);
 
-            var todayStart = LocalDayStart(DateOnly.FromDateTime(DateTime.Today));
-            var todayStatuses = await db.ChecklistRuns
-                .Where(x => x.StartedAt >= todayStart)
-                .Select(x => x.Status)
-                .ToListAsync();
-
-            todayRunCount = todayStatuses.Count;
-            todaySucceededCount = todayStatuses.Count(x => x == RunStatus.Succeeded);
-            todayFailedCount = todayStatuses.Count(x => x == RunStatus.Failed);
-            todaySkippedCount = todayStatuses.Count(x => x == RunStatus.Skipped);
-            todayCanceledCount = todayStatuses.Count(x => x == RunStatus.Canceled);
-            todayActiveCount = todayStatuses.Count(x => x is RunStatus.Pending or RunStatus.Running);
-
-            recentRuns = await db.ChecklistRuns
+            var recent = await db.ChecklistRuns
+                .Where(x => x.EnvironmentId == current.EnvironmentId)
                 .Include(x => x.Checklist)
-                .Include(x => x.Environment)
                 .OrderByDescending(x => x.StartedAt)
-                .Take(5)
+                .Take(4)
                 .AsNoTracking()
                 .ToListAsync();
+            recentRuns = recent
+                .Select(x => new RunRow(x, NameOrMissing(x.Checklist?.Name), current.EnvironmentName))
+                .ToList();
+
+            clusterRun = await FindLatestClusterRunAsync(db, current.EnvironmentId);
+
+            if (clusterRun is not null)
+            {
+                ApplyOverview(ClusterOverviewBuilder.Build(clusterRun));
+                pageTitle = clusterRun.StartedAt.ToLocalTime().Date == DateTime.Today
+                    ? "今日集群诊断"
+                    : "集群诊断";
+            }
+
+            var open = await db.Findings
+                .Where(x => x.EnvironmentId == current.EnvironmentId && x.Status == FindingStatus.Open)
+                .AsNoTracking()
+                .ToListAsync();
+            openFindingCount = open.Count;
+            openFindings = open
+                .OrderByDescending(x => x.Severity)
+                .ThenByDescending(x => x.LastSeenAt)
+                .Take(5)
+                .Select(x => new FindingRow(x, StatusPresenter.FromSeverity(x.Severity)))
+                .ToList();
+
+            allHealthy = totalNodes > 0
+                && okCount == totalNodes
+                && neutralCount == 0
+                && otherPendingCount == 0
+                && otherAttentionCount == 0
+                && allExpectedResultsPresent
+                && clusterRun?.Status == RunStatus.Succeeded
+                && openFindingCount == 0;
         }
         catch (Exception ex)
         {
@@ -132,44 +493,67 @@ else
         }
     }
 
-    private static DateTimeOffset LocalDayStart(DateOnly date)
+    private void ApplyOverview(ClusterOverview overview)
     {
-        var local = date.ToDateTime(TimeOnly.MinValue);
-        return new DateTimeOffset(local, TimeZoneInfo.Local.GetUtcOffset(local));
+        serviceNodes = overview.Services.ToList();
+        dependencyNodes = overview.Dependencies.ToList();
+        totalNodes = overview.TotalNodes;
+        okCount = overview.OkCount;
+        warningCount = overview.WarningCount;
+        dangerCount = overview.DangerCount;
+        pendingCount = overview.PendingCount;
+        neutralCount = overview.NeutralCount;
+        attentionCount = overview.AttentionCount;
+        otherPendingCount = overview.OtherPendingCount;
+        otherAttentionCount = overview.OtherAttentionCount;
+        expectedItemCount = overview.ExpectedItemCount;
+        allExpectedResultsPresent = overview.AllExpectedResultsPresent;
+        firstRunError = overview.FirstError;
+    }
+
+    /// <summary>
+    /// 最近一轮含集群节点的执行。候选按快照里的工具名（ASCII）筛选，避免依赖
+    /// 会被改名的当前检查项标题；命中后再用快照里的条目二次确认。
+    /// </summary>
+    private static async Task<ChecklistRun?> FindLatestClusterRunAsync(
+        GrowthInspectorDbContext db,
+        Guid environmentId)
+    {
+        var candidates = await db.ChecklistRuns
+            .Where(x => x.EnvironmentId == environmentId
+                && x.SnapshotJson.Contains("GetServiceHealth"))
+            .OrderByDescending(x => x.StartedAt)
+            .Select(x => new { x.Id, x.SnapshotJson })
+            .Take(ClusterOverviewBuilder.TakeCandidateCount)
+            .AsNoTracking()
+            .ToListAsync();
+
+        var runId = candidates
+            .FirstOrDefault(candidate => ClusterOverviewBuilder.ContainsClusterItems(candidate.SnapshotJson))
+            ?.Id;
+
+        if (runId is null)
+        {
+            return null;
+        }
+
+        return await db.ChecklistRuns
+            .Include(x => x.Results)
+            .ThenInclude(x => x.ChecklistItem)
+            .AsNoTracking()
+            .FirstOrDefaultAsync(x => x.Id == runId);
     }
 
     private static string NameOrMissing(string? name)
         => string.IsNullOrWhiteSpace(name) ? "(已归档/已删除)" : name;
 
-    private static string StatusText(RunStatus status) => status switch
-    {
-        RunStatus.Pending => "等待中",
-        RunStatus.Running => "执行中",
-        RunStatus.Succeeded => "成功",
-        RunStatus.Failed => "失败",
-        RunStatus.Canceled => "已取消",
-        RunStatus.Skipped => "已跳过",
-        _ => status.ToString(),
-    };
+    private static string Shorten(string value, int max)
+        => value.Length <= max ? value : $"{value[..max]}…";
 
-    private static string StatusClass(RunStatus status) => status switch
-    {
-        RunStatus.Pending => "badge status-pending",
-        RunStatus.Running => "badge status-running",
-        RunStatus.Succeeded => "badge status-succeeded",
-        RunStatus.Failed => "badge status-failed",
-        RunStatus.Canceled => "badge status-canceled",
-        RunStatus.Skipped => "badge status-skipped",
-        _ => "badge",
-    };
+    private string MeterWidth(int count)
+        => totalNodes == 0 ? "width: 0" : $"width: {count * 100d / totalNodes:0.##}%";
 
-    private static string TriggerText(ChecklistTrigger trigger)
-        => trigger == ChecklistTrigger.Schedule ? "调度" : "手动";
+    private sealed record RunRow(ChecklistRun Run, string ChecklistName, string EnvironmentName);
 
-    private static string FormatDuration(long milliseconds) => milliseconds switch
-    {
-        <= 0 => "-",
-        < 1000 => $"{milliseconds} ms",
-        _ => $"{milliseconds / 1000d:0.0} s",
-    };
+    private sealed record FindingRow(Finding Finding, StatusPresentation Severity);
 }

@@ -1,0 +1,101 @@
+@inherits LayoutComponentBase
+@inject WorkspaceContextService Workspace
+@inject NavigationManager Nav
+
+<div class="ds">
+    <a class="skip" href="#main">跳到正文</a>
+
+    <header class="masthead">
+        <div class="masthead__inner">
+            <a class="brand" href="@HomeHref">
+                <svg class="brand__mark" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                    <rect x="3.25" y="3.25" width="17.5" height="17.5" stroke="currentColor" stroke-width="1.4" />
+                    <path d="M8 7.5v9M12 7.5v4.5M16 7.5v6.5" stroke="currentColor" stroke-width="1.4" />
+                    <path d="M3.25 16.75h17.5" stroke="currentColor" stroke-width="1.4" />
+                </svg>
+                <span>
+                    <span class="brand__name">Growth Inspector</span>
+                    <span class="brand__sub">Inspection report</span>
+                </span>
+            </a>
+
+            <nav class="nav" aria-label="主导航">
+                <NavLink class="nav__link" ActiveClass="is-current" href="@HomeHref" Match="NavLinkMatch.All">总览</NavLink>
+                <NavLink class="nav__link" ActiveClass="is-current" href="@FindingsHref">异常</NavLink>
+                <NavLink class="nav__link" ActiveClass="is-current" href="@RunsHref">执行</NavLink>
+                <NavLink class="nav__link" ActiveClass="is-current" href="@ReportsHref">报告</NavLink>
+                <NavLink class="nav__link" ActiveClass="is-current" href="@SystemsHref">体系</NavLink>
+                <NavLink class="nav__link" ActiveClass="is-current" href="@SettingsHref">设置</NavLink>
+            </nav>
+
+            <div class="masthead__context">
+                <!-- 不写 action：GET 表单提交到当前路径，避免增强导航后 action 停留在旧页。 -->
+                <form class="context-form" method="get">
+                    <label class="context-label" for="workspace-select">项目 / 环境</label>
+                    <select class="select" id="workspace-select" name="@WorkspaceContextService.QueryKey">
+                        @if (workspace.Options.Count == 0)
+                        {
+                            <option value="">未配置项目 / 环境</option>
+                        }
+                        else
+                        {
+                            @foreach (var option in workspace.Options)
+                            {
+                                <option value="@option.Key" selected="@(option.Key == workspace.Current?.Key)">@option.Display</option>
+                            }
+                        }
+                    </select>
+                    <button class="btn btn--ghost context-form__submit" type="submit">切换</button>
+                </form>
+                <a class="btn btn--primary" href="@ChecklistsHref" title="前往检查单手动触发执行">立即巡检</a>
+                <button class="btn btn--quiet" type="button" data-theme-toggle aria-label="切换深色 / 浅色" aria-pressed="false">
+                    <span class="theme-toggle__to-dark">深色</span>
+                    <span class="theme-toggle__to-light">浅色</span>
+                </button>
+            </div>
+        </div>
+    </header>
+
+    <main id="main" class="ds-shell" tabindex="-1">
+        @Body
+    </main>
+
+    <footer class="footer">
+        <div class="footer__inner">
+            <span>Growth Inspector · 设计系统 v0.1</span>
+            <span>C 留白 · 丝绸灰 / 玄色 · 烟墨 / 月白</span>
+            <span><a href="@StyleguideHref">视觉规范</a> · 冻结稿 · 2026-11-04</span>
+        </div>
+    </footer>
+</div>
+
+@code {
+    private WorkspaceContext workspace = WorkspaceContext.Empty;
+    private string contextQuery = string.Empty;
+
+    private string HomeHref => $"/{contextQuery}";
+    private string FindingsHref => $"/findings{contextQuery}";
+    private string RunsHref => $"/runs{contextQuery}";
+    private string ReportsHref => $"/reports{contextQuery}";
+    private string SystemsHref => $"/runbooks{contextQuery}";
+    private string SettingsHref => $"/settings{contextQuery}";
+    private string ChecklistsHref => $"/checklists{contextQuery}";
+    private string StyleguideHref => $"/styleguide{contextQuery}";
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            var requested = WorkspaceContextService.ReadQueryValue(Nav);
+            workspace = await Workspace.ResolveAsync(requested);
+            // 默认上下文不写进 URL；只有用户显式选择过才在导航里保留 query。
+            contextQuery = string.IsNullOrEmpty(requested) ? string.Empty : workspace.QuerySuffix;
+        }
+        catch
+        {
+            // 壳不能因为上下文加载失败而整页崩掉；页面自己会把真实错误显示出来。
+            workspace = WorkspaceContext.Empty;
+            contextQuery = string.Empty;
+        }
+    }
+}

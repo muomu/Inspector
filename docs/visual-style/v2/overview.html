@@ -1,0 +1,179 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <title>今日巡检诊断 · Growth Inspector 视觉样张</title>
+  <link rel="stylesheet" href="../assets/tokens.css">
+  <link rel="stylesheet" href="../assets/base.css">
+  <link rel="stylesheet" href="../assets/components.css">
+</head>
+<body data-layout="b" data-page="overview">
+  <a class="skip" href="#main">跳到正文</a>
+
+  <header class="masthead">
+    <div class="masthead__inner">
+      <a class="brand" href="../index.html">
+        <svg class="brand__mark" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+  <rect x="3.25" y="3.25" width="17.5" height="17.5" stroke="currentColor" stroke-width="1.4"/>
+  <path d="M8 7.5v9M12 7.5v4.5M16 7.5v6.5" stroke="currentColor" stroke-width="1.4"/>
+  <path d="M3.25 16.75h17.5" stroke="currentColor" stroke-width="1.4"/>
+</svg>
+        <span>
+          <span class="brand__name">Growth Inspector</span>
+          <span class="brand__sub">Inspection report</span>
+        </span>
+      </a>
+
+      <nav class="nav" aria-label="主导航">
+        <a class="nav__link is-active" href="overview.html" aria-current="page">总览</a>
+        <a class="nav__link" href="findings.html">异常</a>
+        <a class="nav__link" href="run.html">执行</a>
+        <a class="nav__link is-disabled" href="#" aria-disabled="true" tabindex="-1" title="样张未覆盖，正式重做时补齐">报告</a>
+        <a class="nav__link is-disabled" href="#" aria-disabled="true" tabindex="-1" title="样张未覆盖，正式重做时补齐">体系</a>
+        <a class="nav__link is-disabled" href="#" aria-disabled="true" tabindex="-1" title="样张未覆盖，正式重做时补齐">设置</a>
+      </nav>
+
+      <div class="masthead__context">
+        <span class="context-label">项目 / 环境</span>
+        <select class="select" aria-label="选择项目与环境">
+          <option>Growth · prod</option>
+          <option>Growth · beta</option>
+        </select>
+        <button class="btn btn--primary" type="button">立即巡检</button>
+        <button class="btn btn--quiet theme-toggle" type="button" data-theme-toggle aria-pressed="false">深色</button>
+      </div>
+    </div>
+  </header>
+
+  <main id="main" class="shell">
+
+    <header class="page-head">
+      <div class="page-head__main">
+        <p class="kicker">集群诊断 · Cluster diagnosis</p>
+        <h1 class="page-title">今日集群诊断</h1>
+        <p class="page-meta">
+          <span>Growth</span><span>prod</span><span>2026-11-04 17:20</span><span>31 / 31 检查项</span>
+        </p>
+      </div>
+      <div class="page-head__actions">
+        <a class="btn btn--quiet" href="run.html">判定方法</a>
+      </div>
+    </header>
+
+    <section class="cluster-hero" aria-labelledby="cluster-title">
+      <h2 class="cluster-title" id="cluster-title">
+        集群 <span class="nowrap">8 / 10 正常</span>；<span class="nowrap"><em>2 个对象</em>需要处理</span>。
+      </h2>
+      <p class="cluster-copy">
+        Growth · prod 的 6 个服务与 4 项依赖中，死信 topic 与 CAP outbox 两处需要跟进；
+        另有 1 项工作流卡单因取值路径缺失待证，未计入告警。
+      </p>
+      <div class="cluster-stats">
+        <span class="cluster-stat"><strong>8</strong>正常</span>
+        <span class="cluster-stat cluster-stat--warn"><strong>1</strong>注意</span>
+        <span class="cluster-stat cluster-stat--bad"><strong>1</strong>异常</span>
+        <span class="cluster-stat cluster-stat--pending"><strong>1</strong>项待证</span>
+        <span class="cluster-stat__note">10 个对象 · 数据源 Grafana · thanos</span>
+      </div>
+      <div class="cluster-meter" role="img" aria-label="10 个对象：8 正常、1 注意、1 异常">
+        <span class="cluster-meter__seg cluster-meter__seg--ok" style="width: 80%"></span>
+        <span class="cluster-meter__seg cluster-meter__seg--warn" style="width: 10%"></span>
+        <span class="cluster-meter__seg cluster-meter__seg--bad" style="width: 10%"></span>
+      </div>
+    </section>
+
+    <section class="section" aria-labelledby="s-cluster">
+      <div class="section__head">
+        <span class="section__index">§ 01</span>
+        <h2 class="section__title" id="s-cluster">集群状态</h2>
+        <span class="section__meta">Growth · prod</span>
+      </div>
+      <div class="section__body">
+        <div class="cluster-group">
+          <div class="cluster-group__head"><h3>服务</h3><span>6</span></div>
+          <div class="node-grid node-grid--services"><div class="node"><span class="node__glyph" aria-hidden="true">✓</span><div class="node__body"><span class="node__name">management-svc</span></div></div><div class="node"><span class="node__glyph" aria-hidden="true">✓</span><div class="node__body"><span class="node__name">openapi-svc</span></div></div><div class="node node--warn"><span class="node__glyph" aria-hidden="true">▲</span><div class="node__body"><span class="node__name">growth-worker</span><span class="node__meta">CAP outbox 680</span></div></div><div class="node node--bad"><span class="node__glyph" aria-hidden="true">■</span><div class="node__body"><span class="node__name">ump-worker</span><span class="node__meta">死信 37 / 15m</span></div></div><div class="node"><span class="node__glyph" aria-hidden="true">✓</span><div class="node__body"><span class="node__name">materialize-worker</span></div></div><div class="node"><span class="node__glyph" aria-hidden="true">✓</span><div class="node__body"><span class="node__name">callmedia-svc</span></div></div></div>
+        </div>
+        <div class="cluster-group">
+          <div class="cluster-group__head"><h3>依赖</h3><span>4</span></div>
+          <div class="node-grid node-grid--deps"><div class="node"><span class="node__glyph" aria-hidden="true">✓</span><div class="node__body"><span class="node__name">MySQL</span></div></div><div class="node"><span class="node__glyph" aria-hidden="true">✓</span><div class="node__body"><span class="node__name">Redis</span></div></div><div class="node"><span class="node__glyph" aria-hidden="true">✓</span><div class="node__body"><span class="node__name">Kafka</span></div></div><div class="node"><span class="node__glyph" aria-hidden="true">✓</span><div class="node__body"><span class="node__name">StarRocks</span></div></div></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="section" aria-labelledby="s-findings">
+      <div class="section__head">
+        <span class="section__index">§ 02</span>
+        <h2 class="section__title" id="s-findings">需要处理</h2>
+        <span class="section__meta">2 条未恢复</span>
+      </div>
+      <div class="section__body">
+        <div class="finding-list">
+      <article class="finding finding--critical">
+        <div class="finding__severity finding__severity--critical">
+          <span aria-hidden="true">■</span> Critical
+        </div>
+        <div class="finding__main">
+          <h3 class="finding__title">死信 topic 到达量超阈值</h3>
+          <p class="finding__meta">
+            <span class="mono">growth.ekyc.dlq</span>
+            <span>37 条 / 15m</span>
+            <span>规则 v3</span>
+            <span>首次 10:42</span>
+          </p>
+        </div>
+        <div class="finding__side">
+          <a href="run.html#evidence-deadletter">查看证据 →</a>
+        </div>
+      </article>
+
+      <article class="finding finding--warning">
+        <div class="finding__severity finding__severity--warning">
+          <span aria-hidden="true">▲</span> Warning
+        </div>
+        <div class="finding__main">
+          <h3 class="finding__title">CAP outbox 待投递积压</h3>
+          <p class="finding__meta">
+            <span class="mono">cap.published · Scheduled</span>
+            <span>680 条</span>
+            <span>规则 v2</span>
+            <span>首次 09:15</span>
+          </p>
+        </div>
+        <div class="finding__side">
+          <a href="run.html">查看证据 →</a>
+        </div>
+      </article>
+    </div>
+        <p class="note" style="margin-top: 14px;">
+          判定型检查项只有“断言不成立 + 框架复核一致”才进入 Finding；Error / Mismatch 只进日报观察。
+        </p>
+      </div>
+    </section>
+
+    <section class="section" aria-labelledby="s-recent">
+      <div class="section__head">
+        <span class="section__index">§ 03</span>
+        <h2 class="section__title" id="s-recent">最近执行</h2>
+        <span class="section__meta"><a href="run.html">查看执行详情 →</a></span>
+      </div>
+      <div class="section__body">
+        <div class="run-list"><a class="run-row" href="run.html"><span class="run-row__time">17:20</span><span class="run-row__name">运行健康巡检</span><span class="run-row__env">prod</span><span class="run-row__status"><span class="status status--bad"><span class="status__glyph" aria-hidden="true">■</span><span>异常</span></span></span><span class="run-row__arrow" aria-hidden="true">→</span></a><a class="run-row" href="run.html"><span class="run-row__time">17:00</span><span class="run-row__name">触达准入与告警口径巡检</span><span class="run-row__env">prod</span><span class="run-row__status"><span class="status status--ok"><span class="status__glyph" aria-hidden="true">✓</span><span>通过</span></span></span><span class="run-row__arrow" aria-hidden="true">→</span></a><a class="run-row" href="run.html"><span class="run-row__time">16:28</span><span class="run-row__name">数仓质量巡检</span><span class="run-row__env">prod</span><span class="run-row__status"><span class="status status--ok"><span class="status__glyph" aria-hidden="true">✓</span><span>通过</span></span></span><span class="run-row__arrow" aria-hidden="true">→</span></a></div>
+      </div>
+    </section>
+    
+  </main>
+
+  <footer class="footer">
+    <div class="footer__inner">
+      <span>Growth Inspector · 视觉样张 v0.2</span>
+      <span>数据源 Grafana · thanos（样张数据，非真实巡检结果）</span>
+      <span>RPT-2026-11-04-01</span>
+    </div>
+  </footer>
+
+  <div class="variant-bar" role="navigation" aria-label="版面样张切换"><span class="variant-bar__label">版面</span><a class="" href="../v1/overview.html" title="A 报告栏 · 1200 / 40px" aria-label="A 报告栏 · 1200 / 40px">A</a> <a class="is-active" aria-current="true" href="../v2/overview.html" title="B 全宽 · 100% / 36px" aria-label="B 全宽 · 100% / 36px">B</a> <a class="" href="../v3/overview.html" title="C 留白 · 1120 / 48px" aria-label="C 留白 · 1120 / 48px">C</a><span class="variant-bar__note">样张</span></div>
+  <script src="../assets/theme.js" defer></script>
+</body>
+</html>

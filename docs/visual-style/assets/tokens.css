@@ -1,0 +1,159 @@
+/* ============================================================
+   Growth Inspector · 视觉样张 v0.2
+   主色调：丝绸灰 / 玄色（浅）· 烟墨 / 月白（深）
+   强调色：墨青；语义色独立。页面里不写死颜色。
+   ============================================================ */
+
+@font-face {
+  font-family: "Noto Serif SC";
+  src: url("fonts/noto-serif-sc-chinese-simplified-400-normal.woff2") format("woff2");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Noto Sans SC";
+  src: url("fonts/noto-sans-sc-chinese-simplified-400-normal.woff2") format("woff2");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Noto Sans SC";
+  src: url("fonts/noto-sans-sc-chinese-simplified-500-normal.woff2") format("woff2");
+  font-weight: 500;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "IBM Plex Mono";
+  src: url("fonts/ibm-plex-mono-latin-400-normal.woff2") format("woff2");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "IBM Plex Mono";
+  src: url("fonts/ibm-plex-mono-latin-500-normal.woff2") format("woff2");
+  font-weight: 500;
+  font-style: normal;
+  font-display: swap;
+}
+
+:root {
+  color-scheme: light;
+
+  /* primitive · 浅色 */
+  --paper-00: #e6e7e4; /* 丝绸灰 */
+  --paper-01: #efefec;
+  --paper-02: #e2e3de;
+  --ink-00: #1a1a1a; /* 玄色 */
+  --ink-01: #3a3a3a;
+  --ink-02: #5b6670;
+  --ink-03: #7b8585;
+  --line-00: #cfd0cb;
+  --line-01: #7b7d76;
+  --teal-00: #14535a; /* 墨青 */
+  --teal-01: #0e3f45;
+  --teal-02: #d9e5e4;
+  --red-00: #b23a2f;
+  --red-01: #f2deda;
+  --amber-00: #8a5a00;
+  --amber-01: #efe4c9;
+  --green-00: #2e6b45;
+  --green-01: #dde9e0;
+  --neutral-01: #dcddd8;
+
+  /* semantic */
+  --paper: var(--paper-00);
+  --paper-raised: var(--paper-01);
+  --paper-sunken: var(--paper-02);
+  --ink: var(--ink-00);
+  --ink-soft: var(--ink-01);
+  --muted: var(--ink-02);
+  --muted-soft: var(--ink-03);
+  --line: var(--line-00);
+  --line-strong: var(--line-01);
+  --accent: var(--teal-00);
+  --accent-ink: var(--teal-01);
+  --accent-soft: var(--teal-02);
+  --danger: var(--red-00);
+  --danger-soft: var(--red-01);
+  --warning: var(--amber-00);
+  --warning-soft: var(--amber-01);
+  --ok: var(--green-00);
+  --ok-soft: var(--green-01);
+  --idle: var(--ink-02);
+  --idle-soft: var(--neutral-01);
+  --focus: #0f6b63;
+  --pattern-line: rgba(26, 26, 26, 0.03);
+  --pattern-diag: rgba(20, 83, 90, 0.028);
+
+  /* type */
+  --serif: "Noto Serif SC", "Songti SC", "STSong", "SimSun", serif;
+  --sans: "Noto Sans SC", -apple-system, BlinkMacSystemFont, "PingFang SC",
+    "Microsoft YaHei", "WenQuanYi Zen Hei", sans-serif;
+  --mono: "IBM Plex Mono", "JetBrains Mono", "DejaVu Sans Mono", Consolas,
+    monospace;
+
+  /* shape */
+  --radius: 2px;
+  --radius-lg: 3px;
+  --rule: 1px;
+  --hairline: 1px solid var(--line);
+
+  /* spacing scale · 4px base */
+  --s-1: 4px;
+  --s-2: 8px;
+  --s-3: 12px;
+  --s-4: 16px;
+  --s-5: 20px;
+  --s-6: 24px;
+  --s-7: 32px;
+  --s-8: 40px;
+  --s-9: 48px;
+  --s-10: 64px;
+
+  /* layout variants（由 body[data-layout] 覆盖） */
+  --content: 1200px;
+  --gutter: 32px;
+  --row: 40px;
+  --section-gap: 48px;
+  --prose-size: 15px;
+  --prose-leading: 1.72;
+  --lead-size: 36px;
+  --table-size: 13.5px;
+}
+
+/* 深色：烟墨为底、月白为字；烟墨 #3B475B 同时作为分隔线 */
+[data-theme="dark"] {
+  color-scheme: dark;
+
+  --paper-00: #242b36; /* 烟墨（深一档，保证状态色对比度） */
+  --paper-01: #2c3441;
+  --paper-02: #1c222c;
+  --ink-00: #d6ecf0; /* 月白 */
+  --ink-01: #c3d9de;
+  --ink-02: #a7b3b8;
+  --ink-03: #8a97ab;
+  --line-00: #3b475b; /* 烟墨 */
+  --line-01: #6f7d93;
+  --teal-00: #8fc3c3;
+  --teal-01: #b7dada;
+  --teal-02: #263b3e;
+  --red-00: #e08a80;
+  --red-01: #3a2528;
+  --amber-00: #d6b06a;
+  --amber-01: #3a3020;
+  --green-00: #8ec3a0;
+  --green-01: #1f2c24;
+  --neutral-01: #2a303a;
+
+  --focus: #9fd3d3;
+  --pattern-line: rgba(214, 236, 240, 0.028);
+  --pattern-diag: rgba(143, 195, 195, 0.025);
+}

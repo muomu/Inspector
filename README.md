@@ -54,6 +54,15 @@ seed/growth/                       通用 / 专用手册、检查单、mock MCP 
 docs/inspection-knowledge.md       A/B/C 判据 → 手册 → 检查单 / 检查项的映射说明
 ```
 
+## 设计系统（进行中）
+
+- `/styleguide`：C 留白冻结稿（丝绸灰 / 玄色，烟墨 / 月白），含色板、字体、五态、表格、集群节点、证据与空态。
+- `/` 总览已迁到新壳：`DesignLayout`（项目/环境上下文、主题切换、总览/异常/执行/报告/体系/设置）+ `StatusPresenter` 单一状态映射；
+  集群结论 → 服务/依赖网格 → 需要处理 → 最近执行，全部读真实库。节点以执行快照的期望检查项为准，缺失结果按「待证 · 无结果」；
+  只有 `Succeeded` + 结果完整 + 无未恢复 Finding 才显示全清。
+- `/styleguide` 与 `/` 使用新设计系统（`wwwroot/css/design-system.css` + `DesignLayout`）；其余页面仍在旧 UI（`MainLayout`），后续按 IA 迁移。
+- 视觉决策与规范：`docs/visual-style/style-spec.md`；静态样张：`docs/visual-style/index.html`。
+
 ## 运行
 
 前置：.NET SDK 10.0.4xx。
@@ -101,7 +110,7 @@ export INSPECTOR_MCP_ADMIN_WRITE=true       # 可选：开启 admin-write 档（
 
 ```bash
 dotnet build GrowthInspector.slnx                 # 0 warning / 0 error
-dotnet test tests/GrowthInspector.Tests           # 136 passed
+dotnet test tests/GrowthInspector.Tests           # 160 passed（原 136 + 状态/集群映射 24）
 ```
 
 - `EndToEndMockTests`：真实 stdio mock MCP server + 脚本化 LLM，跑通
@@ -113,7 +122,7 @@ dotnet test tests/GrowthInspector.Tests           # 136 passed
 
 手工冒烟（已按此验收）：
 
-1. 空库启动 → 自动建 13 张表，`/`、`/runbooks`、`/checklists`、`/runs`、`/findings`、`/reports`、`/settings` 均 200；
+1. 空库启动 → 自动建 13 张表，`/`、`/runbooks`、`/checklists`、`/runs`、`/findings`、`/reports`、`/settings`、`/styleguide` 均 200；
 2. seed 导入后手动触发 / 定时触发 → 后台队列执行、快照含通用手册与引用专用手册、每项立即落库；
 3. 管理 MCP：无 token 401、非法 Origin 403、带 token 可 initialize / tools/list；只读档无写工具；
    写档可 `project_create` / `checklist_create` / `checklist_item_create` / `checklist_trigger`；
