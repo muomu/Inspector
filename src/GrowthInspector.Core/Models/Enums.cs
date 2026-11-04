@@ -111,7 +111,12 @@ public enum FrameworkVerdictStatus
     Mismatch = 4,
 }
 
-/// <summary>结构化断言的比较符。</summary>
+/// <summary>
+/// 结构化断言的比较符。
+/// 语义：断言描述「健康」状态 —— 取值满足断言 = Ok，不满足 = Abnormal（与告警表达式相反，转写时需取反）。
+/// 数值比较用 invariant decimal；Eq/Ne 在双方可解析为数值时按数值比较，否则按序数（ordinal）字符串比较；
+/// Contains/NotContains 按序数子串匹配。
+/// </summary>
 public enum ComparisonOperator
 {
     /// <summary>取值 &lt; 阈值。</summary>

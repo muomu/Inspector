@@ -55,7 +55,10 @@ public sealed class ChecklistItem
 
     public DateTimeOffset UpdatedAt { get; set; } = DateTimeOffset.UtcNow;
 
-    /// <summary>是否声明了可复核的结构化断言。</summary>
+    /// <summary>
+    /// 是否声明了可复核的结构化断言。
+    /// 断言描述健康状态：取值满足 Operator/Threshold = Ok，不满足 = Abnormal。
+    /// </summary>
     public bool HasAssertion =>
         !string.IsNullOrWhiteSpace(ToolName)
         && Operator is not null
