@@ -32,6 +32,23 @@ public static class DataServiceCollectionExtensions
         return services;
     }
 
+    /// <summary>
+    /// 注册定时审计清理（BackgroundService）。宿主需额外调用本方法才会启用；
+    /// 清理周期与首次延迟可通过 <paramref name="configure"/> 覆盖。
+    /// </summary>
+    public static IServiceCollection AddGrowthInspectorAuditPruning(
+        this IServiceCollection services,
+        Action<AuditPruningOptions>? configure = null)
+    {
+        if (configure is not null)
+        {
+            services.Configure(configure);
+        }
+
+        services.AddHostedService<AuditPruningHostedService>();
+        return services;
+    }
+
     /// <summary>确保 SQLite 库与 schema 存在（EnsureCreated，不做迁移）。</summary>
     public static async Task EnsureGrowthInspectorDatabaseAsync(
         this IServiceProvider serviceProvider,
