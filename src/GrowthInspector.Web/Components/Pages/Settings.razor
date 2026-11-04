@@ -1,11 +1,14 @@
 @page "/settings"
 @rendermode InteractiveServer
-@inject IDbContextFactory<GrowthInspectorDbContext> DbFactory
+@inject IManagementService Management
 
 <PageTitle>设置 · Growth Inspector</PageTitle>
 
 <h1>设置</h1>
-<p class="page-subtitle">项目 / 环境 / MCP server 管理（骨架实现，交互细节由 U1 细化）。</p>
+<p class="page-subtitle">
+    项目 / 环境 / MCP server 管理：写操作统一走管理 service；凭据只写不读，
+    Lark webhook、启动命令、参数与 URL 在列表和编辑框里只显示掩码，保持掩码或留空即不修改。
+</p>
 
 @if (statusMessage is not null)
 {
@@ -26,7 +29,8 @@
                     <th>名称</th>
                     <th>标识</th>
                     <th>Lark webhook</th>
-                    <th>创建时间</th>
+                    <th>状态</th>
+                    <th></th>
                 </tr>
             </thead>
             <tbody>
@@ -35,8 +39,14 @@
                     <tr>
                         <td>@project.Name</td>
                         <td>@(project.Code ?? "-")</td>
-                        <td>@(string.IsNullOrWhiteSpace(project.LarkWebhookUrl) ? "未配置" : "已配置")</td>
-                        <td>@project.CreatedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm")</td>
+                        <td>@(string.IsNullOrWhiteSpace(project.LarkWebhookUrl) ? "未配置" : project.LarkWebhookUrl)</td>
+                        <td><span class="badge">@(project.IsArchived ? "已归档" : "启用")</span></td>
+                        <td class="actions">
+                            <button @onclick="() => BeginEditProject(project)">编辑</button>
+                            <button @onclick="() => ToggleProjectArchivedAsync(project)">
+                                @(project.IsArchived ? "取消归档" : "归档")
+                            </button>
+                        </td>
                     </tr>
                 }
             </tbody>
@@ -57,6 +67,25 @@
     </div>
 </div>
 
+@if (editingProjectId != Guid.Empty)
+{
+    <div class="panel">
+        <h2>编辑项目</h2>
+        <div class="form-row">
+            <label>名称<input @bind="editProjectName" /></label>
+            <label>标识<input @bind="editProjectCode" /></label>
+            <label>Lark webhook<input @bind="editProjectWebhook" placeholder="保持掩码或留空表示不修改" /></label>
+        </div>
+        <div class="form-col">
+            <label>项目级运维上下文<textarea rows="3" @bind="editProjectOpsContext"></textarea></label>
+        </div>
+        <div class="form-row">
+            <button class="primary" @onclick="SaveProjectAsync">保存</button>
+            <button @onclick="CancelEditProject">取消</button>
+        </div>
+    </div>
+}
+
 <div class="panel">
     <h2>环境</h2>
     @if (environments.Count == 0)
@@ -71,6 +100,8 @@
                     <th>项目</th>
                     <th>名称</th>
                     <th>默认</th>
+                    <th>状态</th>
+                    <th></th>
                 </tr>
             </thead>
             <tbody>
@@ -80,6 +111,13 @@
                         <td>@environment.ProjectName</td>
                         <td>@environment.Name</td>
                         <td>@(environment.IsDefault ? "是" : "否")</td>
+                        <td><span class="badge">@(environment.IsArchived ? "已归档" : "启用")</span></td>
+                        <td class="actions">
+                            <button @onclick="() => BeginEditEnvironment(environment)">编辑</button>
+                            <button @onclick="() => ToggleEnvironmentArchivedAsync(environment)">
+                                @(environment.IsArchived ? "取消归档" : "归档")
+                            </button>
+                        </td>
                     </tr>
                 }
             </tbody>
@@ -111,6 +149,21 @@
     }
 </div>
 
+@if (editingEnvironmentId != Guid.Empty)
+{
+    <div class="panel">
+        <h2>编辑环境</h2>
+        <div class="form-row">
+            <label>名称<input @bind="editEnvironmentName" /></label>
+            <label class="checkbox-line">
+                <input type="checkbox" @bind="editEnvironmentIsDefault" /> 设为默认环境
+            </label>
+            <button class="primary" @onclick="SaveEnvironmentAsync">保存</button>
+            <button @onclick="CancelEditEnvironment">取消</button>
+        </div>
+    </div>
+}
+
 <div class="panel">
     <h2>MCP server</h2>
     <p class="muted">MCP 是唯一数据源接入方式；新增数据源 = 登记一个 server（v1 只要求 mock MCP server 可跑通）。</p>
@@ -126,17 +179,30 @@
                     <th>项目</th>
                     <th>名称</th>
                     <th>传输</th>
+                    <th>环境</th>
+                    <th>命令 / URL</th>
                     <th>启用</th>
+                    <th>状态</th>
+                    <th></th>
                 </tr>
             </thead>
             <tbody>
                 @foreach (var server in mcpServers)
                 {
                     <tr>
-                        <td>@server.ProjectName</td>
+                        <td>@ProjectName(server.ProjectId)</td>
                         <td>@server.Name</td>
-                        <td>@server.Transport</td>
+                        <td>@(server.Transport == McpTransport.Http ? "HTTP" : "stdio")</td>
+                        <td>@(server.EnvironmentName ?? "全部环境")</td>
+                        <td>@(server.Transport == McpTransport.Http ? server.Url : server.Command)</td>
                         <td>@(server.IsEnabled ? "是" : "否")</td>
+                        <td><span class="badge">@(server.IsArchived ? "已归档" : "启用")</span></td>
+                        <td class="actions">
+                            <button @onclick="() => BeginEditMcpServer(server)">编辑</button>
+                            <button @onclick="() => ToggleMcpServerArchivedAsync(server)">
+                                @(server.IsArchived ? "取消归档" : "归档")
+                            </button>
+                        </td>
                     </tr>
                 }
             </tbody>
@@ -169,7 +235,16 @@
                     <option value="Http">HTTP</option>
                 </select>
             </label>
-            <button class="primary" @onclick="CreateMcpServerAsync">登记</button>
+            <label>
+                绑定环境
+                <select @bind="mcpEnvironmentId">
+                    <option value="">全部环境</option>
+                    @foreach (var environment in EnvironmentsOf(mcpProjectId))
+                    {
+                        <option value="@environment.Id">@environment.Name</option>
+                    }
+                </select>
+            </label>
         </div>
         <div class="form-row">
             @if (mcpTransportText == "Http")
@@ -182,17 +257,64 @@
                 <label style="flex:1;">参数（JSON 数组）<input @bind="mcpArgumentsJson" placeholder="[&quot;run&quot;,&quot;--project&quot;,&quot;...&quot;]" /></label>
             }
         </div>
+        <div class="form-row">
+            <label>超时（秒）<input type="number" @bind="mcpTimeoutSeconds" /></label>
+            <label>结果截断（字节）<input type="number" @bind="mcpMaxResultBytes" /></label>
+            <label class="checkbox-line"><input type="checkbox" @bind="mcpIsEnabled" /> 启用</label>
+            <button class="primary" @onclick="CreateMcpServerAsync">登记</button>
+        </div>
     }
 </div>
 
+@if (editingMcpServerId != Guid.Empty)
+{
+    <div class="panel">
+        <h2>编辑 MCP server</h2>
+        <div class="form-row">
+            <label>名称<input @bind="editMcpName" /></label>
+            <label>
+                传输
+                <select @bind="editMcpTransportText">
+                    <option value="Stdio">stdio（本地子进程）</option>
+                    <option value="Http">HTTP</option>
+                </select>
+            </label>
+            <label>
+                绑定环境
+                <select @bind="editMcpEnvironmentId">
+                    <option value="">全部环境</option>
+                    @foreach (var environment in EnvironmentsOf(editMcpProjectId))
+                    {
+                        <option value="@environment.Id">@environment.Name</option>
+                    }
+                </select>
+            </label>
+        </div>
+        <div class="form-row">
+            @if (editMcpTransportText == "Http")
+            {
+                <label style="flex:1;">URL<input @bind="editMcpUrl" placeholder="保持掩码或留空表示不修改" /></label>
+            }
+            else
+            {
+                <label style="flex:1;">启动命令<input @bind="editMcpCommand" placeholder="保持掩码或留空表示不修改" /></label>
+                <label style="flex:1;">参数（JSON 数组）<input @bind="editMcpArgumentsJson" placeholder="保持掩码或留空表示不修改" /></label>
+            }
+        </div>
+        <div class="form-row">
+            <label>超时（秒）<input type="number" @bind="editMcpTimeoutSeconds" /></label>
+            <label>结果截断（字节）<input type="number" @bind="editMcpMaxResultBytes" /></label>
+            <label class="checkbox-line"><input type="checkbox" @bind="editMcpIsEnabled" /> 启用</label>
+            <button class="primary" @onclick="SaveMcpServerAsync">保存</button>
+            <button @onclick="CancelEditMcpServer">取消</button>
+        </div>
+    </div>
+}
+
 @code {
-    private sealed record EnvironmentRow(Guid Id, string ProjectName, string Name, bool IsDefault);
-
-    private sealed record McpServerRow(Guid Id, string ProjectName, string Name, McpTransport Transport, bool IsEnabled);
-
-    private List<Project> projects = [];
-    private List<EnvironmentRow> environments = [];
-    private List<McpServerRow> mcpServers = [];
+    private List<ProjectView> projects = [];
+    private List<EnvironmentView> environments = [];
+    private List<McpServerView> mcpServers = [];
     private string? statusMessage;
 
     private string projectName = "";
@@ -200,16 +322,42 @@
     private string projectWebhook = "";
     private string projectOpsContext = "";
 
+    private Guid editingProjectId;
+    private string editProjectName = "";
+    private string editProjectCode = "";
+    private string editProjectWebhook = "";
+    private string editProjectOpsContext = "";
+
     private string environmentProjectId = "";
     private string environmentName = "";
     private bool environmentIsDefault;
 
+    private Guid editingEnvironmentId;
+    private string editEnvironmentName = "";
+    private bool editEnvironmentIsDefault;
+
     private string mcpProjectId = "";
     private string mcpName = "";
     private string mcpTransportText = "Stdio";
+    private string mcpEnvironmentId = "";
     private string mcpCommand = "";
     private string mcpArgumentsJson = "";
     private string mcpUrl = "";
+    private int mcpTimeoutSeconds = 60;
+    private int mcpMaxResultBytes = 8192;
+    private bool mcpIsEnabled = true;
+
+    private Guid editingMcpServerId;
+    private Guid editMcpProjectId;
+    private string editMcpName = "";
+    private string editMcpTransportText = "Stdio";
+    private string editMcpEnvironmentId = "";
+    private string editMcpCommand = "";
+    private string editMcpArgumentsJson = "";
+    private string editMcpUrl = "";
+    private int editMcpTimeoutSeconds = 60;
+    private int editMcpMaxResultBytes = 8192;
+    private bool editMcpIsEnabled = true;
 
     protected override async Task OnInitializedAsync()
     {
@@ -218,147 +366,253 @@
 
     private async Task ReloadAsync()
     {
-        await using var db = await DbFactory.CreateDbContextAsync();
-        projects = await db.Projects
-            .OrderBy(x => x.Name)
-            .AsNoTracking()
-            .ToListAsync();
-
-        environments = await db.Environments
-            .OrderBy(x => x.Project!.Name)
-            .ThenBy(x => x.Name)
-            .Select(x => new EnvironmentRow(x.Id, x.Project!.Name, x.Name, x.IsDefault))
-            .AsNoTracking()
-            .ToListAsync();
-
-        mcpServers = await db.McpServers
-            .OrderBy(x => x.Project!.Name)
-            .ThenBy(x => x.Name)
-            .Select(x => new McpServerRow(x.Id, x.Project!.Name, x.Name, x.Transport, x.IsEnabled))
-            .AsNoTracking()
-            .ToListAsync();
+        try
+        {
+            projects = (await Management.ListProjectsAsync(includeArchived: true, limit: 200)).Items.ToList();
+            environments = (await Management.ListEnvironmentsAsync(includeArchived: true, limit: 200)).Items.ToList();
+            mcpServers = (await Management.ListMcpServersAsync(includeArchived: true, limit: 200)).Items.ToList();
+        }
+        catch (ManagementException ex)
+        {
+            statusMessage = ex.Message;
+        }
     }
 
     private async Task CreateProjectAsync()
     {
-        statusMessage = null;
-        if (string.IsNullOrWhiteSpace(projectName))
+        await ExecuteAsync(async () =>
         {
-            statusMessage = "项目名称不能为空。";
-            return;
-        }
+            await Management.CreateProjectAsync(new CreateProjectRequest(
+                projectName,
+                NullIfBlank(projectCode),
+                NullIfBlank(projectWebhook),
+                NullIfBlank(projectOpsContext)));
 
-        await using var db = await DbFactory.CreateDbContextAsync();
-        db.Projects.Add(new Project
-        {
-            Name = projectName.Trim(),
-            Code = string.IsNullOrWhiteSpace(projectCode) ? null : projectCode.Trim(),
-            LarkWebhookUrl = string.IsNullOrWhiteSpace(projectWebhook) ? null : projectWebhook.Trim(),
-            OpsContext = string.IsNullOrWhiteSpace(projectOpsContext) ? null : projectOpsContext,
+            projectName = "";
+            projectCode = "";
+            projectWebhook = "";
+            projectOpsContext = "";
+            statusMessage = "项目已创建。";
+            await ReloadAsync();
         });
+    }
 
-        await db.SaveChangesAsync();
-        projectName = "";
-        projectCode = "";
-        projectWebhook = "";
-        projectOpsContext = "";
-        statusMessage = "项目已创建。";
-        await ReloadAsync();
+    private void BeginEditProject(ProjectView project)
+    {
+        editingProjectId = project.Id;
+        editProjectName = project.Name;
+        editProjectCode = project.Code ?? "";
+        editProjectWebhook = project.LarkWebhookUrl ?? "";
+        editProjectOpsContext = project.OpsContext ?? "";
+    }
+
+    private async Task SaveProjectAsync()
+    {
+        await ExecuteAsync(async () =>
+        {
+            await Management.UpdateProjectAsync(
+                editingProjectId,
+                new UpdateProjectRequest(
+                    editProjectName,
+                    NullIfBlank(editProjectCode),
+                    NullIfBlank(editProjectWebhook),
+                    NullIfBlank(editProjectOpsContext)));
+
+            statusMessage = $"项目已保存 {DateTimeOffset.Now:HH:mm:ss}";
+            await ReloadAsync();
+        });
+    }
+
+    private void CancelEditProject() => editingProjectId = Guid.Empty;
+
+    private async Task ToggleProjectArchivedAsync(ProjectView project)
+    {
+        await ExecuteAsync(async () =>
+        {
+            await Management.SetProjectArchivedAsync(project.Id, !project.IsArchived);
+            statusMessage = project.IsArchived ? "项目已取消归档。" : "项目已归档。";
+            await ReloadAsync();
+        });
     }
 
     private async Task CreateEnvironmentAsync()
     {
-        statusMessage = null;
-        if (!Guid.TryParse(environmentProjectId, out var projectId))
+        await ExecuteAsync(async () =>
         {
-            statusMessage = "请选择项目。";
-            return;
-        }
-
-        if (string.IsNullOrWhiteSpace(environmentName))
-        {
-            statusMessage = "环境名称不能为空。";
-            return;
-        }
-
-        await using var db = await DbFactory.CreateDbContextAsync();
-        if (environmentIsDefault)
-        {
-            var others = await db.Environments
-                .Where(x => x.ProjectId == projectId && x.IsDefault)
-                .ToListAsync();
-            foreach (var other in others)
+            if (!Guid.TryParse(environmentProjectId, out var projectId))
             {
-                other.IsDefault = false;
+                throw new ManagementException("请选择项目。");
             }
-        }
 
-        db.Environments.Add(new GrowthInspector.Core.Models.Environment
-        {
-            ProjectId = projectId,
-            Name = environmentName.Trim(),
-            IsDefault = environmentIsDefault,
+            await Management.CreateEnvironmentAsync(new CreateEnvironmentRequest(
+                projectId,
+                environmentName,
+                environmentIsDefault));
+
+            environmentName = "";
+            environmentIsDefault = false;
+            statusMessage = "环境已创建。";
+            await ReloadAsync();
         });
+    }
 
-        await db.SaveChangesAsync();
-        environmentName = "";
-        environmentIsDefault = false;
-        statusMessage = "环境已创建。";
-        await ReloadAsync();
+    private void BeginEditEnvironment(EnvironmentView environment)
+    {
+        editingEnvironmentId = environment.Id;
+        editEnvironmentName = environment.Name;
+        editEnvironmentIsDefault = environment.IsDefault;
+    }
+
+    private async Task SaveEnvironmentAsync()
+    {
+        await ExecuteAsync(async () =>
+        {
+            await Management.UpdateEnvironmentAsync(
+                editingEnvironmentId,
+                new UpdateEnvironmentRequest(editEnvironmentName, editEnvironmentIsDefault));
+            statusMessage = "环境已保存。";
+            await ReloadAsync();
+        });
+    }
+
+    private void CancelEditEnvironment() => editingEnvironmentId = Guid.Empty;
+
+    private async Task ToggleEnvironmentArchivedAsync(EnvironmentView environment)
+    {
+        await ExecuteAsync(async () =>
+        {
+            await Management.SetEnvironmentArchivedAsync(environment.Id, !environment.IsArchived);
+            statusMessage = environment.IsArchived ? "环境已取消归档。" : "环境已归档。";
+            await ReloadAsync();
+        });
     }
 
     private async Task CreateMcpServerAsync()
     {
-        statusMessage = null;
-        if (!Guid.TryParse(mcpProjectId, out var projectId))
+        await ExecuteAsync(async () =>
         {
-            statusMessage = "请选择项目。";
-            return;
-        }
+            if (!Guid.TryParse(mcpProjectId, out var projectId))
+            {
+                throw new ManagementException("请选择项目。");
+            }
 
-        if (string.IsNullOrWhiteSpace(mcpName))
-        {
-            statusMessage = "MCP server 名称不能为空。";
-            return;
-        }
+            if (!Enum.TryParse<McpTransport>(mcpTransportText, out var transport))
+            {
+                transport = McpTransport.Stdio;
+            }
 
-        if (!Enum.TryParse<McpTransport>(mcpTransportText, out var transport))
-        {
-            transport = McpTransport.Stdio;
-        }
+            await Management.CreateMcpServerAsync(new CreateMcpServerRequest(
+                projectId,
+                mcpName,
+                transport,
+                ParseOptionalId(mcpEnvironmentId),
+                NullIfBlank(mcpCommand),
+                NullIfBlank(mcpArgumentsJson),
+                NullIfBlank(mcpUrl),
+                mcpIsEnabled,
+                mcpTimeoutSeconds,
+                mcpMaxResultBytes));
 
-        if (transport == McpTransport.Stdio && string.IsNullOrWhiteSpace(mcpCommand))
-        {
-            statusMessage = "stdio 传输需要填写启动命令。";
-            return;
-        }
-
-        if (transport == McpTransport.Http && string.IsNullOrWhiteSpace(mcpUrl))
-        {
-            statusMessage = "HTTP 传输需要填写 URL。";
-            return;
-        }
-
-        await using var db = await DbFactory.CreateDbContextAsync();
-        db.McpServers.Add(new McpServer
-        {
-            ProjectId = projectId,
-            Name = mcpName.Trim(),
-            Transport = transport,
-            Command = transport == McpTransport.Stdio ? mcpCommand.Trim() : null,
-            ArgumentsJson = transport == McpTransport.Stdio && !string.IsNullOrWhiteSpace(mcpArgumentsJson)
-                ? mcpArgumentsJson.Trim()
-                : null,
-            Url = transport == McpTransport.Http ? mcpUrl.Trim() : null,
-            IsEnabled = true,
+            mcpName = "";
+            mcpCommand = "";
+            mcpArgumentsJson = "";
+            mcpUrl = "";
+            mcpEnvironmentId = "";
+            statusMessage = "MCP server 已登记。";
+            await ReloadAsync();
         });
-
-        await db.SaveChangesAsync();
-        mcpName = "";
-        mcpCommand = "";
-        mcpArgumentsJson = "";
-        mcpUrl = "";
-        statusMessage = "MCP server 已登记。";
-        await ReloadAsync();
     }
+
+    private void BeginEditMcpServer(McpServerView server)
+    {
+        editingMcpServerId = server.Id;
+        editMcpProjectId = server.ProjectId;
+        editMcpName = server.Name;
+        editMcpTransportText = server.Transport.ToString();
+        editMcpEnvironmentId = server.EnvironmentId?.ToString() ?? "";
+        editMcpCommand = server.Command ?? "";
+        editMcpArgumentsJson = server.ArgumentsJson ?? "";
+        editMcpUrl = server.Url ?? "";
+        editMcpTimeoutSeconds = server.TimeoutSeconds;
+        editMcpMaxResultBytes = server.MaxResultBytes;
+        editMcpIsEnabled = server.IsEnabled;
+    }
+
+    private async Task SaveMcpServerAsync()
+    {
+        await ExecuteAsync(async () =>
+        {
+            if (!Enum.TryParse<McpTransport>(editMcpTransportText, out var transport))
+            {
+                transport = McpTransport.Stdio;
+            }
+
+            await Management.UpdateMcpServerAsync(
+                editingMcpServerId,
+                new UpdateMcpServerRequest(
+                    editMcpName,
+                    transport,
+                    ParseOptionalId(editMcpEnvironmentId),
+                    NullIfBlank(editMcpCommand),
+                    NullIfBlank(editMcpArgumentsJson),
+                    NullIfBlank(editMcpUrl),
+                    editMcpIsEnabled,
+                    editMcpTimeoutSeconds,
+                    editMcpMaxResultBytes));
+
+            statusMessage = "MCP server 已保存。";
+            await ReloadAsync();
+        });
+    }
+
+    private void CancelEditMcpServer() => editingMcpServerId = Guid.Empty;
+
+    private async Task ToggleMcpServerArchivedAsync(McpServerView server)
+    {
+        await ExecuteAsync(async () =>
+        {
+            await Management.SetMcpServerArchivedAsync(server.Id, !server.IsArchived);
+            statusMessage = server.IsArchived ? "MCP server 已取消归档。" : "MCP server 已归档。";
+            await ReloadAsync();
+        });
+    }
+
+    private IEnumerable<EnvironmentView> EnvironmentsOf(string projectId)
+    {
+        if (!Guid.TryParse(projectId, out var id))
+        {
+            return [];
+        }
+
+        return environments.Where(x => x.ProjectId == id && !x.IsArchived);
+    }
+
+    private IEnumerable<EnvironmentView> EnvironmentsOf(Guid projectId)
+        => environments.Where(x => x.ProjectId == projectId && !x.IsArchived);
+
+    private string ProjectName(Guid projectId)
+        => projects.FirstOrDefault(x => x.Id == projectId)?.Name ?? "-";
+
+    private async Task ExecuteAsync(Func<Task> action)
+    {
+        statusMessage = null;
+        try
+        {
+            await action();
+        }
+        catch (ManagementException ex)
+        {
+            statusMessage = ex.Message;
+        }
+        catch (Exception ex)
+        {
+            statusMessage = $"操作失败：{ex.Message}";
+        }
+    }
+
+    private static Guid? ParseOptionalId(string value)
+        => Guid.TryParse(value, out var id) ? id : null;
+
+    private static string? NullIfBlank(string value)
+        => string.IsNullOrWhiteSpace(value) ? null : value.Trim();
 }

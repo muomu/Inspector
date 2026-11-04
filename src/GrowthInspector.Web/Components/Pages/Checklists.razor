@@ -1,14 +1,14 @@
 @page "/checklists"
 @rendermode InteractiveServer
-@inject IDbContextFactory<GrowthInspectorDbContext> DbFactory
+@inject IManagementService Management
 @inject NavigationManager Nav
 
 <PageTitle>检查单 · Growth Inspector</PageTitle>
 
 <h1>检查单</h1>
 <p class="page-subtitle">
-    一次可调度执行的单元：一张检查单一个频率，引用同项目下多份手册，包含多个检查项；
-    执行时按环境创建 run 并写快照。
+    一次可调度执行的单元：一张检查单一个频率，引用同项目下未归档的专用手册，包含多个检查项；
+    执行时按环境创建 run 并写快照。默认只显示未归档检查单。
 </p>
 
 @if (statusMessage is not null)
@@ -16,10 +16,11 @@
     <p class="muted">@statusMessage</p>
 }
 
-@if (loadError is not null)
-{
-    <p class="error-text">加载失败：@loadError</p>
-}
+<div class="form-row">
+    <label class="checkbox-line">
+        <input type="checkbox" @bind="showArchived" @bind:after="ReloadAsync" /> 显示已归档
+    </label>
+</div>
 
 @if (rows.Count == 0)
 {
@@ -37,6 +38,7 @@ else
                 <th>检查项</th>
                 <th>引用手册</th>
                 <th>最近运行</th>
+                <th>状态</th>
                 <th></th>
             </tr>
         </thead>
@@ -51,9 +53,11 @@ else
                     <td>@row.ItemCount</td>
                     <td>@row.RunbookRefCount</td>
                     <td>@(row.LastRunAt is null ? "-" : row.LastRunAt.Value.ToLocalTime().ToString("MM-dd HH:mm"))</td>
+                    <td><span class="badge">@(row.IsArchived ? "已归档" : "启用")</span></td>
                     <td class="actions">
                         <a href="/checklists/@row.Id">编辑</a>
-                        <button @onclick="() => ToggleAsync(row)">@(row.IsEnabled ? "停用" : "启用")</button>
+                        <button @onclick="() => ToggleEnabledAsync(row)">@(row.IsEnabled ? "停用" : "启用")</button>
+                        <button @onclick="() => ToggleArchivedAsync(row)">@(row.IsArchived ? "取消归档" : "归档")</button>
                     </td>
                 </tr>
             }
@@ -98,23 +102,13 @@ else
 </div>
 
 @code {
-    private sealed record Row(
-        Guid Id,
-        string Name,
-        string ProjectName,
-        ChecklistFrequency Frequency,
-        bool IsEnabled,
-        int ItemCount,
-        int RunbookRefCount,
-        DateTimeOffset? LastRunAt);
-
-    private List<Row> rows = [];
-    private List<Project> projects = [];
+    private List<ChecklistView> rows = [];
+    private List<ProjectView> projects = [];
     private string newProjectId = "";
     private string newName = "";
     private string newFrequencyText = "Manual";
+    private bool showArchived;
     private string? statusMessage;
-    private string? loadError;
 
     protected override async Task OnInitializedAsync()
     {
@@ -125,99 +119,74 @@ else
     {
         try
         {
-            await using var db = await DbFactory.CreateDbContextAsync();
-            projects = await db.Projects
-                .OrderBy(x => x.Name)
-                .AsNoTracking()
-                .ToListAsync();
-
-            var lastRuns = await db.ChecklistRuns
-                .GroupBy(x => x.ChecklistId)
-                .Select(g => new { ChecklistId = g.Key, LastRunAt = g.Max(x => x.StartedAt) })
-                .ToDictionaryAsync(x => x.ChecklistId, x => x.LastRunAt);
-
-            var checklists = await db.Checklists
-                .OrderByDescending(x => x.UpdatedAt)
-                .Select(x => new
-                {
-                    x.Id,
-                    x.Name,
-                    ProjectName = x.Project!.Name,
-                    x.Frequency,
-                    x.IsEnabled,
-                    ItemCount = x.Items.Count,
-                    RunbookRefCount = x.RunbookRefs.Count,
-                })
-                .AsNoTracking()
-                .ToListAsync();
-
-            rows = checklists
-                .Select(x => new Row(
-                    x.Id,
-                    x.Name,
-                    x.ProjectName,
-                    x.Frequency,
-                    x.IsEnabled,
-                    x.ItemCount,
-                    x.RunbookRefCount,
-                    lastRuns.GetValueOrDefault(x.Id)))
-                .ToList();
+            projects = (await Management.ListProjectsAsync(includeArchived: false, limit: 200)).Items.ToList();
+            rows = (await Management.ListChecklistsAsync(includeArchived: showArchived, limit: 200)).Items.ToList();
         }
-        catch (Exception ex)
+        catch (ManagementException ex)
         {
-            loadError = ex.Message;
+            statusMessage = ex.Message;
         }
     }
 
-    private async Task ToggleAsync(Row row)
+    private async Task ToggleEnabledAsync(ChecklistView row)
     {
-        await using var db = await DbFactory.CreateDbContextAsync();
-        var entity = await db.Checklists.SingleOrDefaultAsync(x => x.Id == row.Id);
-        if (entity is null)
+        await ExecuteAsync(async () =>
         {
-            return;
-        }
+            await Management.UpdateChecklistAsync(
+                row.Id,
+                new UpdateChecklistRequest(row.Name, row.Description, row.Frequency, !row.IsEnabled));
+            await ReloadAsync();
+        });
+    }
 
-        entity.IsEnabled = !entity.IsEnabled;
-        entity.UpdatedAt = DateTimeOffset.UtcNow;
-        await db.SaveChangesAsync();
-        await ReloadAsync();
+    private async Task ToggleArchivedAsync(ChecklistView row)
+    {
+        await ExecuteAsync(async () =>
+        {
+            await Management.SetChecklistArchivedAsync(row.Id, !row.IsArchived);
+            statusMessage = row.IsArchived ? "检查单已取消归档。" : "检查单已归档。";
+            await ReloadAsync();
+        });
     }
 
     private async Task CreateAsync()
     {
+        await ExecuteAsync(async () =>
+        {
+            if (!Guid.TryParse(newProjectId, out var projectId))
+            {
+                throw new ManagementException("请先选择项目。");
+            }
+
+            if (!Enum.TryParse<ChecklistFrequency>(newFrequencyText, out var frequency))
+            {
+                frequency = ChecklistFrequency.Manual;
+            }
+
+            var id = await Management.CreateChecklistAsync(new CreateChecklistRequest(
+                projectId,
+                newName,
+                Frequency: frequency));
+
+            Nav.NavigateTo($"/checklists/{id}");
+        });
+    }
+
+    private async Task ExecuteAsync(Func<Task> action)
+    {
         statusMessage = null;
-
-        if (!Guid.TryParse(newProjectId, out var projectId))
+        try
         {
-            statusMessage = "请先选择项目。";
-            return;
+            await action();
         }
-
-        if (string.IsNullOrWhiteSpace(newName))
+        catch (ManagementException ex)
         {
-            statusMessage = "请填写检查单名称。";
-            return;
+            statusMessage = ex.Message;
         }
-
-        if (!Enum.TryParse<ChecklistFrequency>(newFrequencyText, out var frequency))
+        catch (Exception ex)
         {
-            frequency = ChecklistFrequency.Manual;
+            statusMessage = $"操作失败：{ex.Message}";
         }
-
-        await using var db = await DbFactory.CreateDbContextAsync();
-        var checklist = new Checklist
-        {
-            ProjectId = projectId,
-            Name = newName.Trim(),
-            Frequency = frequency,
-            IsEnabled = true,
-        };
-
-        db.Checklists.Add(checklist);
-        await db.SaveChangesAsync();
-
-        Nav.NavigateTo($"/checklists/{checklist.Id}");
     }
 
     private static string FrequencyText(ChecklistFrequency frequency) => frequency switch
