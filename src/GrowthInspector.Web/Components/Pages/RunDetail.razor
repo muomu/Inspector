@@ -527,6 +527,7 @@ else
             .Include(x => x.ToolCalls)
             .Include(x => x.Summary)
             .AsNoTracking()
+            .AsSplitQuery()
             .SingleOrDefaultAsync(x => x.Id == Id);
 
         if (run is null)
