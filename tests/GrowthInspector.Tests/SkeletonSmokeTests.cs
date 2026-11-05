@@ -79,19 +79,18 @@ public sealed class SkeletonSmokeTests : IDisposable
                 Frequency = ChecklistFrequency.Hourly,
                 Project = project,
             };
-            checklist.Items.Add(new ChecklistItem { Title = "信息型检查项", SortOrder = 0 });
             checklist.Items.Add(new ChecklistItem
             {
-                Title = "判定型检查项",
+                Title = "服务信息收集",
+                Body = "收集服务版本与运行状态；只做信息汇总，正常即可。",
+                SortOrder = 0,
+            });
+            checklist.Items.Add(new ChecklistItem
+            {
+                Title = "接口延迟检查",
+                Body = "检查 P99 延迟是否低于 500ms；超过先看下游超时与连接池。",
                 SortOrder = 1,
-                ToolName = "mock__QueryMetric",
-                ArgumentsTemplate = "{\"metric\":\"http_p99_latency_ms\",\"window\":\"1h\"}",
-                ValuePath = "$.value",
-                Operator = ComparisonOperator.Lt,
-                Threshold = "500",
-                Window = "1h",
                 Severity = Severity.Critical,
-                RuleVersion = 1,
             });
             checklist.RunbookRefs.Add(new ChecklistRunbookRef { Runbook = specializedRunbook });
 

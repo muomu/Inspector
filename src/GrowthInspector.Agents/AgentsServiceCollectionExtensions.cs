@@ -19,7 +19,7 @@ public static class AgentsServiceCollectionExtensions
     /// <summary>
     /// 注册 agent 层依赖：DeepSeek 执行 / 摘要客户端（无 key 时降级为不可用实现）、
     /// MCP 工具调用入口、工具基座（本地手册工具 + MCP 透传 + 审计）、
-    /// 检查项执行 agent（取证 + 框架复核）与反思 agent。
+    /// 检查项执行 agent（取证 + 判定）与反思 agent。
     /// </summary>
     public static IServiceCollection AddGrowthInspectorAgents(
         this IServiceCollection services,
@@ -70,7 +70,7 @@ public static class AgentsServiceCollectionExtensions
             sp.GetRequiredService<IOptions<InspectionOptions>>(),
             sp.GetRequiredService<ILoggerFactory>()));
 
-        // 执行 agent（整单会话 + 取证 + 结构化 claim + 框架复核）与反思 agent（手册改写）。
+        // 执行 agent（整单会话 + 取证 + 结构化 claim + 判定）与反思 agent（手册改写）。
         services.AddScoped<IChecklistItemExecutor, ChecklistItemAgentExecutor>();
         services.AddScoped<IReflectionAgent, ReflectionAgent>();
 

@@ -4,7 +4,7 @@ namespace GrowthInspector.Core.Abstractions;
 
 /// <summary>
 /// 单个检查项的执行请求。执行上下文包含：该项目全部通用手册全文、被检查单引用的专用手册、
-/// 当前检查项的结构化断言与 finding 历史；由执行 agent（TPG-2709）消费。
+/// 当前检查项的自然语言正文（标题 / 正文 / 严重级别）与 finding 历史；由执行 agent 消费。
 /// </summary>
 public sealed record ChecklistItemExecutionRequest(
     Guid ChecklistRunId,
@@ -17,8 +17,8 @@ public sealed record ChecklistItemExecutionRequest(
     IReadOnlyList<FindingSnapshot> FindingHistory);
 
 /// <summary>
-/// 单个检查项的执行结果：agent 判定 + 框架复核结论 + 证据与计量。
-/// 框架复核不一致时 Status = Error、FrameworkVerdict = Mismatch，不产生 finding。
+/// 单个检查项的执行结果：agent 判定 + 证据与计量。
+/// 判定由 agent 依自然语言正文给出；执行出错（LLM / MCP / 解析失败）时 Status = Error。
 /// </summary>
 public sealed record ChecklistItemExecutionResult(
     CheckResultStatus Status,
@@ -28,8 +28,6 @@ public sealed record ChecklistItemExecutionResult(
     int CompletionTokens = 0,
     string? ErrorMessage = null,
     VerdictStatus? AgentVerdict = null,
-    FrameworkVerdictStatus? FrameworkVerdict = null,
-    string? RecomputedValue = null,
     string? Narrative = null,
     IReadOnlyList<string>? Observations = null,
     int ToolCallCount = 0);

@@ -6,8 +6,6 @@ namespace GrowthInspector.Agents.Execution;
 /// <summary>执行 agent 输出的结构化 claim。</summary>
 public sealed record ExecutionClaim(
     Guid ChecklistItemId,
-    string? ToolName,
-    string? Value,
     string? Evidence,
     VerdictStatus Verdict,
     string? Narrative,
@@ -95,8 +93,6 @@ public static class ExecutionClaimParser
 
             claim = new ExecutionClaim(
                 itemId,
-                TryGetString(root, "toolName", out var toolName) ? toolName : null,
-                TryGetString(root, "value", out var value) ? value : null,
                 TryGetString(root, "evidence", out var evidence) ? evidence : null,
                 verdict,
                 TryGetString(root, "narrative", out var narrative) ? narrative : null,

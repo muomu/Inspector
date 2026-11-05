@@ -2,503 +2,195 @@
   "checklists": [
     {
       "name": "运行健康巡检（Growth）",
-      "description": "六进程心跳、四项依赖连通，以及 Kafka lag / DLQ / CAP outbox / 工作流卡单 / 任务残留 / 准入队列 / UMP 分片与发件器。假设断言成立=健康。",
+      "description": "六域服务与五项依赖的存活、连通与可用性，小时级确认 Growth 运行面没有断点。",
       "frequency": "Hourly",
       "isEnabled": true,
-      "runbookRefs": [
-        "Growth 通用运维手册：服务拓扑、指标口径与告警升级",
-        "用户事件消费链失败消息处置（原生 Kafka 消费组 + 死信 topic）",
-        "消息积压与工作流卡单",
-        "CAP outbox 积压处置"
-      ],
+      "runbookRefs": [],
       "items": [
         {
-          "title": "management-svc 进程心跳",
-          "dataSourceHint": "mock__GetServiceHealth 取进程健康快照；管理端 API：页面与后台管理接口、配置读写。管理端是页面与配置读写的入口，心跳非 healthy 直接按 Critical 处理；先看进程日志与重启记录",
-          "expectation": "management-svc 返回 status=healthy 为健康；degraded / down 按 Critical 处理，先查进程日志与重启记录",
-          "toolName": "mock__GetServiceHealth",
-          "arguments": {
-            "service": "management-svc"
-          },
-          "valuePath": "$.status",
-          "operator": "Eq",
-          "threshold": "healthy",
-          "window": "5m",
-          "severity": "Critical",
-          "ruleVersion": 1
+          "title": "platform 域运行健康",
+          "body": "确认 platform-svc 是否在运行，进程有无重启、崩溃或实例掉线，管理接口是否可用。健康时服务持续存活，审计、配置、租户设置、数据字典与大模型网关等平台能力都能正常返回。异常先看进程重启记录和错误日志，再确认它依赖的 MySQL、Redis 与 Aether 是否可用。平台能力是其它域的公共依赖，进程不可用按 Critical 处理并优先恢复。",
+          "severity": "Critical"
         },
         {
-          "title": "openapi-svc 进程心跳",
-          "dataSourceHint": "mock__GetServiceHealth 取进程健康快照；开放平台 API：外部回执与 webhook 入口、签名与幂等受理。开放平台入口异常时外部回执会积压，先看进程日志与 Kafka 可写性",
-          "expectation": "openapi-svc 返回 status=healthy 为健康；degraded / down 按 Critical 处理，先查进程日志与重启记录",
-          "toolName": "mock__GetServiceHealth",
-          "arguments": {
-            "service": "openapi-svc"
-          },
-          "valuePath": "$.status",
-          "operator": "Eq",
-          "threshold": "healthy",
-          "window": "5m",
-          "severity": "Critical",
-          "ruleVersion": 1
+          "title": "customer 域运行健康",
+          "body": "确认 customer-svc 与 customer-worker 是否都在运行，进程有无重启、崩溃或实例掉线。健康时客户查询、事件接入、标签分群接口可用，后台的分群重建、评分扫描与事件转发持续推进。异常先看两个进程的重启记录和错误日志，再确认 MySQL、Redis、Kafka 与数仓连接是否正常。svc 不可用或 worker 长时间停摆都会影响客户数据时效，按 Critical 处理。",
+          "severity": "Critical"
         },
         {
-          "title": "growth-worker 进程心跳",
-          "dataSourceHint": "mock__GetServiceHealth 取进程健康快照；后台任务：工作流实例推进、规则触发、图级中断、等事件投递、CAP 消费。工作流推进依赖该进程；心跳异常时检查单里的卡单与 lag 会同时变差",
-          "expectation": "growth-worker 返回 status=healthy 为健康；degraded / down 按 Critical 处理，先查进程日志与重启记录",
-          "toolName": "mock__GetServiceHealth",
-          "arguments": {
-            "service": "growth-worker"
-          },
-          "valuePath": "$.status",
-          "operator": "Eq",
-          "threshold": "healthy",
-          "window": "5m",
-          "severity": "Critical",
-          "ruleVersion": 1
+          "title": "reach 域运行健康",
+          "body": "确认 reach-svc、reach-worker 与 callmedia-svc 是否都在运行，进程有无重启、崩溃或实例掉线。健康时消息投递、触达准入与外呼链路都能正常受理，后台投递与通话任务持续推进。异常先看三个进程的重启记录和错误日志，再确认 Kafka、MySQL、Redis 与 SIP 中继是否可用。触达是对外动作的出口，任一进程不可用按 Critical 处理并优先恢复。",
+          "severity": "Critical"
         },
         {
-          "title": "ump-worker 进程心跳",
-          "dataSourceHint": "mock__GetServiceHealth 取进程健康快照；统一消息投递：抢分片、选路、装配、发送、回执落库、发件器。投递链路异常时先看分片是否还有人在抢，再看供应商出网",
-          "expectation": "ump-worker 返回 status=healthy 为健康；degraded / down 按 Critical 处理，先查进程日志与重启记录",
-          "toolName": "mock__GetServiceHealth",
-          "arguments": {
-            "service": "ump-worker"
-          },
-          "valuePath": "$.status",
-          "operator": "Eq",
-          "threshold": "healthy",
-          "window": "5m",
-          "severity": "Critical",
-          "ruleVersion": 1
+          "title": "flow 域运行健康",
+          "body": "确认 flow-svc 与 flow-worker 是否都在运行，进程有无重启、崩溃或实例掉线。健康时流转图、自动化规则与群发计划能正常读写，工作流实例持续推进不堆积。异常先看两个进程的重启记录和错误日志，再确认 Kafka、MySQL 与 Redis 是否可用。编排停摆会让在途实例卡住，按 Critical 处理并先恢复消费与调度。",
+          "severity": "Critical"
         },
         {
-          "title": "materialize-worker 进程心跳",
-          "dataSourceHint": "mock__GetServiceHealth 取进程健康快照；物化引擎：Kafka → StarRocks 流作业、批层校准、DWS 聚合。心跳异常会同时造成 Kafka lag 上涨与数仓空分区/产出滞后",
-          "expectation": "materialize-worker 返回 status=healthy 为健康；degraded / down 按 Critical 处理，先查进程日志与重启记录",
-          "toolName": "mock__GetServiceHealth",
-          "arguments": {
-            "service": "materialize-worker"
-          },
-          "valuePath": "$.status",
-          "operator": "Eq",
-          "threshold": "healthy",
-          "window": "5m",
-          "severity": "Critical",
-          "ruleVersion": 1
+          "title": "sales 域运行健康",
+          "body": "确认 sales-svc 与 sales-worker 是否都在运行，进程有无重启、崩溃或实例掉线。健康时客户归属与分配、团队、跟进任务与预筛接口可用，后台的成员对账与积分结算任务持续推进。异常先看两个进程的重启记录和错误日志，再确认 MySQL、Redis 与 Kafka 是否正常。销售域不可用会阻断归属与跟进，按 Critical 处理。",
+          "severity": "Critical"
         },
         {
-          "title": "callmedia-svc 进程心跳",
-          "dataSourceHint": "mock__GetServiceHealth 取进程健康快照；实时语音通话宿主：SIP 中继、媒体节点、通话状态机。通话宿主异常时先看媒体节点与 SIP 中继探活，再看进程",
-          "expectation": "callmedia-svc 返回 status=healthy 为健康；degraded / down 按 Critical 处理，先查进程日志与重启记录",
-          "toolName": "mock__GetServiceHealth",
-          "arguments": {
-            "service": "callmedia-svc"
-          },
-          "valuePath": "$.status",
-          "operator": "Eq",
-          "threshold": "healthy",
-          "window": "5m",
-          "severity": "Critical",
-          "ruleVersion": 1
+          "title": "metrics 域运行健康",
+          "body": "确认 metrics-svc 与 metrics-worker 是否都在运行，进程有无重启、崩溃或实例掉线。健康时报表与销售工作台查询可用，物化作业持续把事件写入数仓并产出聚合。异常先看两个进程的重启记录和错误日志，再确认 Kafka、StarRocks 与 MySQL 是否正常。物化 worker 是单副本，停摆会同时拖慢数仓与画像产出，按 Critical 处理。",
+          "severity": "Critical"
         },
         {
-          "title": "MySQL 连通性",
-          "dataSourceHint": "依赖探活；业务事实、CAP outbox/inbox、分片与消息状态都写它；断开时先看写入错误与连接数",
-          "expectation": "MySQL 返回 status=up 为健康；down 时先查网络与凭据，再看依赖自身负载",
-          "toolName": "mock__GetServiceHealth",
-          "arguments": {
-            "target": "dependency",
-            "name": "mysql"
-          },
-          "valuePath": "$.status",
-          "operator": "Eq",
-          "threshold": "up",
-          "window": "5m",
-          "severity": "Critical",
-          "ruleVersion": 1
+          "title": "MySQL 依赖连通",
+          "body": "确认 MySQL 能否连上，业务库的读写是否正常。健康时连接稳定、查询与事务提交正常，连接数没有逼近上限。异常先看连接错误与连接池耗尽情况，再确认网络、账号权限与数据库自身负载。MySQL 是业务事实与消息发件箱的落点，不可用按 Critical 处理。",
+          "severity": "Critical"
         },
         {
-          "title": "Redis 连通性",
-          "dataSourceHint": "依赖探活；状态、限流与租约、预览缓存；断开时抢分片与幂等会异常",
-          "expectation": "Redis 返回 status=up 为健康；down 时先查网络与凭据，再看依赖自身负载",
-          "toolName": "mock__GetServiceHealth",
-          "arguments": {
-            "target": "dependency",
-            "name": "redis"
-          },
-          "valuePath": "$.status",
-          "operator": "Eq",
-          "threshold": "up",
-          "window": "5m",
-          "severity": "Critical",
-          "ruleVersion": 1
+          "title": "Redis 依赖连通",
+          "body": "确认 Redis 能否连上，读写与租约操作是否正常。健康时命令响应正常、内存没有接近上限，也没有大量键被逐出。异常先看连接错误与内存告警，再确认网络与实例负载。Redis 承载状态、限流与租约，读写异常按 Critical 处理，避免状态静默丢失。",
+          "severity": "Critical"
         },
         {
-          "title": "Kafka 连通性",
-          "dataSourceHint": "依赖探活；事件总线、原生消费组、死信 topic；断开时 lag 上涨、outbox 只进不出",
-          "expectation": "Kafka 返回 status=up 为健康；down 时先查网络与凭据，再看依赖自身负载",
-          "toolName": "mock__GetServiceHealth",
-          "arguments": {
-            "target": "dependency",
-            "name": "kafka"
-          },
-          "valuePath": "$.status",
-          "operator": "Eq",
-          "threshold": "up",
-          "window": "5m",
-          "severity": "Critical",
-          "ruleVersion": 1
+          "title": "Kafka 依赖连通",
+          "body": "确认 Kafka 能否连上，生产与消费是否正常推进。健康时消息集群可写、消费组位点持续前进，没有持续扩大的积压。异常先看客户端连接错误与集群健康，再确认消费组是否停摆。Kafka 是事件总线和死信出口，不可用按 Critical 处理。",
+          "severity": "Critical"
         },
         {
-          "title": "StarRocks 连通性",
-          "dataSourceHint": "依赖探活；DWD / DWS 数仓；断开时流作业写入失败，随后出现空分区",
-          "expectation": "StarRocks 返回 status=up 为健康；down 时先查网络与凭据，再看依赖自身负载",
-          "toolName": "mock__GetServiceHealth",
-          "arguments": {
-            "target": "dependency",
-            "name": "starrocks"
-          },
-          "valuePath": "$.status",
-          "operator": "Eq",
-          "threshold": "up",
-          "window": "5m",
-          "severity": "Critical",
-          "ruleVersion": 1
+          "title": "StarRocks 依赖连通",
+          "body": "确认 StarRocks 能否连上，明细表与聚合表的读写是否正常。健康时导入与查询都能完成，写入没有持续报错，分区能正常产出。异常先看连接与导入错误，再确认数据节点负载和存储空间。数仓不可用会同时影响报表与画像，按 Critical 处理。",
+          "severity": "Critical"
         },
         {
-          "title": "Kafka 原生消费组 lag",
-          "dataSourceHint": "按消费组看分区 lag；三条 .native 组与 CAP 的 {前缀}.{链名}.v1 不能混组，混了会互抢分区",
-          "expectation": "15 分钟窗口内三组 lag 的最大值 < 10000 条为健康；持续 15 分钟以上才告警，短时波峰不告警",
-          "toolName": "mock__QueryMetric",
-          "arguments": {
-            "metric": "kafka_consumergroup_lag",
-            "group": "tradepass-growth-worker.*.native",
-            "aggregate": "max",
-            "window": "15m"
-          },
-          "valuePath": "$.value",
-          "operator": "Lt",
-          "threshold": 10000,
-          "window": "15m",
-          "severity": "Warning",
-          "ruleVersion": 1
-        },
-        {
-          "title": "死信 topic 到达量",
-          "dataSourceHint": "26 个 {用户事件}.dlq 的到达量；有到达量先读 dlq-failure-type 与 dlq-source-topic，按死信手册分流",
-          "expectation": "15 分钟内死信到达量为 0 为健康；有到达量按 Critical 处理，不要直接补投（decode 类补一条死一条）",
-          "toolName": "mock__QueryMetric",
-          "arguments": {
-            "metric": "kafka_topic_messages_in",
-            "topic": "*.dlq",
-            "aggregate": "sum",
-            "window": "15m"
-          },
-          "valuePath": "$.value",
-          "operator": "Lte",
-          "threshold": 0,
-          "window": "15m",
-          "severity": "Critical",
-          "ruleVersion": 1
-        },
-        {
-          "title": "CAP outbox 待投递积压",
-          "dataSourceHint": "查 cap.published：Scheduled 是待投递，Failed 或过 ExpiresAt 才需要人工处置",
-          "expectation": "15 分钟窗口内 Scheduled 行数 < 100 为健康；持续增长说明 relay 没在跑或 Kafka 不可写",
-          "toolName": "mock__QuerySql",
-          "arguments": {
-            "sql": "select count(*) as count from cap.published where StatusName = 'Scheduled'"
-          },
-          "valuePath": "$.count",
-          "operator": "Lt",
-          "threshold": 100,
-          "window": "15m",
-          "severity": "Warning",
-          "ruleVersion": 1
-        },
-        {
-          "title": "工作流卡单（在途实例无推进）",
-          "dataSourceHint": "wf_instance 状态为 Active / Suspended 且入口时间超过 30 分钟；实例位置由 wf_instance_trace 最后一条进入行现推",
-          "expectation": "30 分钟窗口内卡单实例数 ≤ 0 为健康；先人工确认是否为长等待流程，确认卡死再升级",
-          "toolName": "mock__QuerySql",
-          "arguments": {
-            "sql": "select count(*) as count from wf_instance where status in ('Active', 'Suspended') and entered_at < utc_timestamp() - interval 30 minute"
-          },
-          "valuePath": "$.count",
-          "operator": "Lte",
-          "threshold": 0,
-          "window": "30m",
-          "severity": "Warning",
-          "ruleVersion": 1
-        },
-        {
-          "title": "任务卡死残留",
-          "dataSourceHint": "进程内任务（自动化重试任务、工作流定时任务）停在 Running 且超过 30 分钟无心跳；v1 用 mock 指标 worker_stuck_task_total 表达",
-          "expectation": "30 分钟窗口内残留任务数 ≤ 0 为健康；清理前先确认对应进程已经不在，避免与在跑进程抢同一批数据",
-          "toolName": "mock__QueryMetric",
-          "arguments": {
-            "metric": "worker_stuck_task_total",
-            "aggregate": "sum",
-            "window": "30m"
-          },
-          "valuePath": "$.value",
-          "operator": "Lte",
-          "threshold": 0,
-          "window": "30m",
-          "severity": "Warning",
-          "ruleVersion": 1
-        },
-        {
-          "title": "准入队列积压（外部询问 hook 待判定）",
-          "dataSourceHint": "外部询问 hook 的待判定量；「未发出」页签能看到被顺延 / 被挡的人与原因。阈值 500 是 mock 基线，接入真实流量后按租户规模校准",
-          "expectation": "5 分钟窗口内待判定行数 < 500 为健康；积压上涨先查 hook 熔断与失败率",
-          "toolName": "mock__QueryMetric",
-          "arguments": {
-            "metric": "gatekeeper_consent_pending_admission_total",
-            "aggregate": "sum",
-            "window": "5m"
-          },
-          "valuePath": "$.value",
-          "operator": "Lt",
-          "threshold": 500,
-          "window": "5m",
-          "severity": "Warning",
-          "ruleVersion": 1
-        },
-        {
-          "title": "UMP 分片堆积（可抢分片无人处理）",
-          "dataSourceHint": "ump_delivery_shard：Pending 且 next_visible_at 已过 10 分钟还没被抢，说明 worker 没在抢片；Leased / Processing 且 leased_until 过期才可被接手",
-          "expectation": "10 分钟内可抢但未处理的分片数 ≤ 0 为健康；先查 ump-worker 心跳与租约，再看主库",
-          "toolName": "mock__QuerySql",
-          "arguments": {
-            "sql": "select count(*) as count from ump_delivery_shard where status = 'Pending' and next_visible_at < utc_timestamp() - interval 10 minute"
-          },
-          "valuePath": "$.count",
-          "operator": "Lte",
-          "threshold": 0,
-          "window": "15m",
-          "severity": "Warning",
-          "ruleVersion": 1
-        },
-        {
-          "title": "UMP 发件器滞后",
-          "dataSourceHint": "终态分片（Completed / DeadLetter）的 published_seq < committed_seq，说明发送侧事件还没发完；发件器按退避重试，不跳过",
-          "expectation": "终态分片未发完的条数 ≤ 0 为健康；根因通常在 Kafka 或主库，不在发件器自身",
-          "toolName": "mock__QuerySql",
-          "arguments": {
-            "sql": "select count(*) as count from ump_delivery_shard where status in ('Completed', 'DeadLetter') and published_seq < committed_seq"
-          },
-          "valuePath": "$.count",
-          "operator": "Lte",
-          "threshold": 0,
-          "window": "15m",
-          "severity": "Warning",
-          "ruleVersion": 1
+          "title": "Aether 依赖连通",
+          "body": "确认 Aether 能否连上，服务注册、路由与鉴权是否正常。健康时网关能按服务编码把请求路由到各域服务，令牌校验与数据权限返回正常。异常先看服务注册是否在线、路由是否有归属冲突，再确认 Aether 自身可用性。Aether 是统一入口与鉴权面，不可用会放大为全站不可用，按 Critical 处理。",
+          "severity": "Critical"
         }
       ]
     },
     {
       "name": "触达准入与告警口径巡检（Growth）",
-      "description": "触达准入层外部询问 hook 的 6 条告警口径：失败行数 / 熔断 / 失败率按来源 PromQL 落判定型；SIP 线路 / 媒体节点 / 暂停外呼来源未给表达式，暂落信息型。",
+      "description": "盯外部询问 hook 的失败、熔断与准入结论，以及 SIP 外呼线路、媒体节点和暂停外呼的真实告警口径。",
       "frequency": "Hourly",
       "isEnabled": true,
       "runbookRefs": [
-        "Growth 通用运维手册：服务拓扑、指标口径与告警升级",
         "触达准入层：外部询问 hook 的监控与告警"
       ],
       "items": [
         {
-          "title": "询问失败行数（gatekeeper_consent_failed_rows_total）",
-          "dataSourceHint": "来源告警式：increase(gatekeeper_consent_failed_rows_total[5m]) > 0；检查项写成健康条件（取反）",
-          "expectation": "5 分钟内询问失败人数增量为 0 为健康；有增量按 tenant / hook 定位，联系租户检查接口",
-          "toolName": "mock__QueryMetric",
-          "arguments": {
-            "expr": "increase(gatekeeper_consent_failed_rows_total[5m])",
-            "window": "5m"
-          },
-          "valuePath": "$.value",
-          "operator": "Lte",
-          "threshold": 0,
-          "window": "5m",
-          "severity": "Critical",
-          "ruleVersion": 1
+          "title": "询问失败消息未发出",
+          "body": "确认近期有没有收件人因为问不到租户的询问 hook 而被判询问失败、消息没有发出。健康时询问失败人数增量为零，消息都能正常进入发送。出现失败先按租户与 hook 定位，联系租户检查接口是否超时、不可达或返回异常。这是确定未发出的业务损失，按 Critical 处理，不要当作普通延迟。",
+          "severity": "Critical"
         },
         {
-          "title": "询问 hook 熔断（gatekeeper_consent_breaker_open）",
-          "dataSourceHint": "来源告警式：max_over_time(gatekeeper_consent_breaker_open[2m]) == 1 持续 1 分钟；检查项写成健康条件（取反）",
-          "expectation": "2 分钟内熔断标志最大值为 0 为健康；为 1 说明该 hook 连续失败被断开，期间消息在顺延，持续下去会变成询问失败",
-          "toolName": "mock__QueryMetric",
-          "arguments": {
-            "expr": "max_over_time(gatekeeper_consent_breaker_open[2m])",
-            "window": "2m"
-          },
-          "valuePath": "$.value",
-          "operator": "Lte",
-          "threshold": 0,
-          "window": "2m",
-          "severity": "Critical",
-          "ruleVersion": 1
+          "title": "询问 hook 熔断",
+          "body": "确认有没有询问 hook 因连续失败进入熔断，期间不再发起询问。健康时不应有 hook 处于熔断状态。出现熔断先看该 hook 之前的失败原因，是超时、网络不可达还是对方报错。熔断期间消息会顺延并可能继续恶化为询问失败，按 Critical 处理。",
+          "severity": "Critical"
         },
         {
-          "title": "询问失败率（按 tenant / hook）",
-          "dataSourceHint": "来源告警式：失败请求速率 / 总请求速率 > 0.2；检查项写成健康条件（取反）。比例用 0-1 小数",
-          "expectation": "按 tenant / hook 的失败率 ≤ 0.2 为健康；超过 0.2 但未熔断时先查网络与对方接口",
-          "toolName": "mock__QueryMetric",
-          "arguments": {
-            "expr": "sum by (tenant, hook) (rate(gatekeeper_consent_requests_total{outcome!=\"ok\"}[5m])) / sum by (tenant, hook) (rate(gatekeeper_consent_requests_total[5m]))",
-            "window": "5m"
-          },
-          "valuePath": "$.value",
-          "operator": "Lte",
-          "threshold": 0.2,
-          "window": "5m",
-          "severity": "Warning",
-          "ruleVersion": 1
+          "title": "询问失败率偏高",
+          "body": "确认各租户、各询问 hook 的询问失败比例是否明显偏高。健康时失败比例应处于低位，没有某个 hook 持续大量失败。比例升高但尚未熔断时，先查网络与对方接口，再对照失败原因分布。持续偏高按 Warning 跟进，避免演变成熔断。",
+          "severity": "Warning"
         },
         {
-          "title": "SIP 线路（信息型，待补断言）",
-          "dataSourceHint": "来源手册未给出 SIP 线路的告警表达式；通话侧先取证线路探活与通话失败原因，不自行编造 PromQL",
-          "expectation": "待补 SIP 线路告警定义后设断言，并递增 RuleVersion",
-          "ruleVersion": 1
+          "title": "准入判定结论异常",
+          "body": "确认准入判定给出的结论分布是否正常，通过、拦截与不可用的比例有没有异常。健康时结论完整、比例稳定，不可用占比不会明显升高。出现异常先看是否有结论缺失或大量不可用，再查判定依赖的配置库与数仓是否可用。结论异常会直接影响发不发，按 Warning 跟进并尽快定位。",
+          "severity": "Warning"
         },
         {
-          "title": "媒体节点（信息型，待补断言）",
-          "dataSourceHint": "来源手册未给出媒体节点的告警表达式；媒体节点是实时语音的通话承载，节点掉线表现为容量池无可用节点",
-          "expectation": "待补媒体节点告警定义后设断言，并递增 RuleVersion",
-          "ruleVersion": 1
+          "title": "SIP 线路断开超 5 分钟",
+          "body": "确认外呼线路有没有断开超过 5 分钟仍未恢复。健康时线路断开能在自愈窗口内恢复，新电话不会持续排队。断开超过 5 分钟说明自动切换与自愈失效，先看线路状态、运营商侧与媒体节点探活。按 Critical 处理，优先恢复线路并疏散排队的电话。",
+          "severity": "Critical"
         },
         {
-          "title": "暂停外呼（信息型，待补断言）",
-          "dataSourceHint": "来源手册未给出暂停外呼的告警表达式；外呼暂停由自动降速与人工暂停两条路径产生",
-          "expectation": "待补暂停外呼告警定义后设断言，并递增 RuleVersion",
-          "ruleVersion": 1
+          "title": "媒体节点整池不可用",
+          "body": "确认外呼媒体节点池有没有超过 3 分钟完全拨不出电话。健康时节点池至少有一个节点可应答并能报出可用线路。连续多轮探测都不通，说明整池不可用，先看节点存活与线路绑定，再查节点重启或发版。按 Critical 处理，恢复前该池承载的外呼都会失败。",
+          "severity": "Critical"
+        },
+        {
+          "title": "线路暂停外呼超 15 分钟",
+          "body": "确认外呼线路有没有暂停外呼超过 15 分钟。健康时线路暂停后应能在短时间内试拨恢复，不会长期停在暂停状态。持续 15 分钟约等于连续五轮试拨失败，已排除瞬时抖动，先看最近失败原因与运营商拒绝、账号配置。按 Critical 处理，排队任务拖到截止会判未发出。",
+          "severity": "Critical"
         }
       ]
     },
     {
-      "name": "数仓质量巡检（Growth）",
-      "description": "空分区、枚举漂移（kyc_status / call_result / deposit_channel）、日量环比、聚合作业产出滞后、归属对账。",
-      "frequency": "Daily",
+      "name": "消费链巡检（Growth）",
+      "description": "盯工作流三条用户事件消费链的位点、死信、订阅面与投递发件箱，避免事件被静默丢失或长期积压。",
+      "frequency": "Hourly",
       "isEnabled": true,
       "runbookRefs": [
-        "Growth 通用运维手册：服务拓扑、指标口径与告警升级",
-        "数仓空分区、枚举漂移与对账"
+        "用户事件消费链失败消息处置（原生 Kafka 消费组 + 死信 topic）"
       ],
       "items": [
         {
-          "title": "DWD 昨日分区是否为空",
-          "dataSourceHint": "分区表查前一天分区行数；不分区表用不了分区元数据，改按 local_date 分组数当天行数",
-          "expectation": "前一天分区行数 > 0 为健康；空分区先查上游 topic 当天到达量，再查流作业是否在跑、写入是否报错",
-          "toolName": "mock__QuerySql",
-          "arguments": {
-            "sql": "select count(*) as rows from dwd_cdp_user_login_di where partition_date = current_date - interval 1 day"
-          },
-          "valuePath": "$.rows",
-          "operator": "Gt",
-          "threshold": 0,
-          "window": "24h",
-          "severity": "Critical",
-          "ruleVersion": 1
+          "title": "原生消费组位点滞后",
+          "body": "确认工作流三条原生消费链的消费组位点是否持续滞后。健康时位点随事件到达持续前进，没有超过 15 分钟不动的分区。位点长时间不动先查服务实例是否存活、日志里有没有不可恢复退出。持续滞后按 Warning 跟进，短时波峰可以观察后再升级。",
+          "severity": "Warning"
         },
         {
-          "title": "kyc_status 枚举漂移",
-          "dataSourceHint": "白名单字段，摄取写入前做白名单校验；白名单取值以数据字典为准（seed 内为占位）。出现白名单外值立即告警",
-          "expectation": "白名单外值个数 ≤ 0 为健康；未知值先确认上游契约是否已上线新值，再决定扩白名单还是修上游",
-          "toolName": "mock__QueryMetric",
-          "arguments": {
-            "metric": "dwd_enum_unknown_value_total",
-            "field": "kyc_status",
-            "table": "dim_cst_profile"
-          },
-          "valuePath": "$.value",
-          "operator": "Lte",
-          "threshold": 0,
-          "window": "24h",
-          "severity": "Critical",
-          "ruleVersion": 1
+          "title": "死信消息到达",
+          "body": "确认用户事件的三条消费链有没有消息落进死信。健康时死信到达量为零，失败消息不会长期堆积。有死信先读消息头里的失败类型与来源主题，判断是解码失败、不可重试还是重试耗尽。死信到达按 Critical 处理，解码类要先找发布方对齐，不要直接补投。",
+          "severity": "Critical"
         },
         {
-          "title": "call_result 枚举漂移",
-          "dataSourceHint": "白名单字段，摄取写入前做白名单校验；白名单取值以数据字典为准（seed 内为占位）。新增未知枚举值立即告警",
-          "expectation": "白名单外值个数 ≤ 0 为健康；不要先改 DWD 里的值，改值会让契约变化与历史数据不可区分",
-          "toolName": "mock__QueryMetric",
-          "arguments": {
-            "metric": "dwd_enum_unknown_value_total",
-            "field": "call_result",
-            "table": "dwd_cd_c_call_di"
-          },
-          "valuePath": "$.value",
-          "operator": "Lte",
-          "threshold": 0,
-          "window": "24h",
-          "severity": "Critical",
-          "ruleVersion": 1
+          "title": "订阅缺主题静默丢事件",
+          "body": "确认消费链订阅的主题在消息集群上是否都存在，有没有被筛掉后静默不消费。健康时订阅的主题齐全，日志里不应出现缺失主题的告警。出现缺失先确认用户事件主题与对应死信主题是否都在，再重启编排后台进程触发预建与补订。缺失期间发布的事件可能已被跳过，按 Critical 处理并评估补投。",
+          "severity": "Critical"
         },
         {
-          "title": "deposit_channel 枚举漂移",
-          "dataSourceHint": "白名单字段，摄取写入前做白名单校验；白名单取值以数据字典为准（seed 内为占位）。新增未知枚举值立即告警",
-          "expectation": "白名单外值个数 ≤ 0 为健康；新值上线按「先扩后收」分两次发布",
-          "toolName": "mock__QueryMetric",
-          "arguments": {
-            "metric": "dwd_enum_unknown_value_total",
-            "field": "deposit_channel",
-            "table": "dwd_fin_deposit_di"
-          },
-          "valuePath": "$.value",
-          "operator": "Lte",
-          "threshold": 0,
-          "window": "24h",
-          "severity": "Critical",
-          "ruleVersion": 1
+          "title": "CAP outbox 待投递积压",
+          "body": "确认 CAP 发件箱里待投递的消息有没有持续积压。健康时待投递数量保持在低位并逐步清空，不会只进不出。积压持续增长先看发件人中继是否在跑，再确认 Kafka 是否可写。按 Warning 跟进，积压时间过长会拖慢依赖这些事件的后续链路。",
+          "severity": "Warning"
         },
         {
-          "title": "日量环比",
-          "dataSourceHint": "当日新增记录数与前 7 日均值的偏差；为负多半是漏写 / 上游断流，为正多半是重复投递 / 补数",
-          "expectation": "偏差绝对值 ≤ 0.3（±30%）为健康；连续 2 天异常升级为 Critical",
-          "toolName": "mock__QueryMetric",
-          "arguments": {
-            "metric": "dwd_daily_rows_deviation_ratio",
-            "table": "dwd_cdp_user_login_di",
-            "baseline": "7d"
-          },
-          "valuePath": "$.value",
-          "operator": "Lte",
-          "threshold": 0.3,
-          "window": "7d",
-          "severity": "Warning",
-          "ruleVersion": 1
+          "title": "UMP 分片死信与发件滞后",
+          "body": "确认 UMP 投递分片有没有落死信，以及终态分片的发件器是否滞后。健康时分片能正常完成投递，死信分片为零，终态分片的事件都能及时发出。两种表现要一起看：分片死信多先查对客户数据服务的远程调用与供应商出网，发件器滞后先查 Kafka 与主库。任一表现持续存在都会造成投递状态不可信，按 Critical 处理。",
+          "severity": "Critical"
         },
         {
-          "title": "聚合作业产出滞后（原 MV 刷新）",
-          "dataSourceHint": "现网 DWS 由物化引擎聚合作业产出，数仓里没有物化视图；要盯的是聚合作业产出新鲜度，不是物化视图刷新状态",
-          "expectation": "DWS 聚合表最新一次成功产出距今 < 120 分钟为健康；滞后先查流作业 lag 与批层校准调度",
-          "toolName": "mock__QueryMetric",
-          "arguments": {
-            "metric": "dws_materialize_lag_minutes",
-            "table": "dws_growth_funnel_1d"
-          },
-          "valuePath": "$.value",
-          "operator": "Lt",
-          "threshold": 120,
-          "window": "1h",
-          "severity": "Warning",
-          "ruleVersion": 1
+          "title": "工作流卡单与任务残留",
+          "body": "确认有没有工作流实例长时间停在活动状态没有推进，以及有没有卡住不动的活动任务。健康时在途实例都能按节点推进，任务完成后不会长期挂在运行中。卡单先看实例当前节点与最近轨迹，确认是长等待流程还是真的卡死；残留任务先确认对应进程已不在。按 Warning 跟进，确认卡死再升级处置。",
+          "severity": "Warning"
+        }
+      ]
+    },
+    {
+      "name": "数仓巡检（Growth）",
+      "description": "每日核对 DWD 分区、枚举与日量、DWS 产出、业务库归属对账与作业重跑后的收口。",
+      "frequency": "Daily",
+      "isEnabled": true,
+      "runbookRefs": [
+        "数仓设计与建模规范",
+        "数仓全量导入手册（上线首日）",
+        "数仓作业重跑"
+      ],
+      "items": [
+        {
+          "title": "DWD 昨日分区为空",
+          "body": "确认 DWD 明细表昨天的分区有没有数据。健康时昨日分区行数大于零，与上游事件到达量量级相当。分区为空先查上游主题当天有没有到达，再查流作业是否在跑、写入是否报错。空分区意味着数据管道可能断链，按 Critical 处理。",
+          "severity": "Critical"
         },
         {
-          "title": "归属对账（DWD 宽表 vs 业务库）",
-          "dataSourceHint": "以业务库（MySQL）客户归属为基准，与 DWD 宽表归属列逐客户比对；表名与列名为 v1 mock 口径示意，接入真实数据源时按数据字典校准",
-          "expectation": "差异数 ≤ 0 为健康；有差异先取证（哪批客户、哪个字段、最近写入作业），再决定重算还是修作业",
-          "toolName": "mock__QuerySql",
-          "arguments": {
-            "sql": "select count(*) as mismatch_count from dwd_cst_label_wide w join dim_cst_profile p on w.customer_id = p.customer_id where w.owner_id <> p.owner_id"
-          },
-          "valuePath": "$.mismatch_count",
-          "operator": "Lte",
-          "threshold": 0,
-          "window": "24h",
-          "severity": "Critical",
-          "ruleVersion": 1
+          "title": "枚举漂移",
+          "body": "确认 kyc_status、call_result、deposit_channel 三个枚举字段有没有出现白名单外的取值。健康时各字段的分布稳定，没有新增未知值。出现未知值先确认上游契约是否已上线新值，再决定扩白名单还是修上游。枚举漂移会让分群与报表口径失真，按 Critical 处理，不要直接改历史值。",
+          "severity": "Critical"
+        },
+        {
+          "title": "日量环比异常",
+          "body": "确认 DWD 每日新增记录数相对前 7 日均值有没有明显偏离。健康时偏差在正负三成以内，日量走势平稳。偏差过大先看上游是否断流或重复投递，再核对补数记录与作业运行情况。按 Warning 跟进，连续两天异常再升级处理。",
+          "severity": "Warning"
+        },
+        {
+          "title": "DWS 聚合产出滞后",
+          "body": "确认 DWS 聚合表的最新产出有没有明显滞后。健康时聚合作业按既定节奏产出，最新成功结果落在最近一个产出周期内，不会跨周期堆积。滞后先看流作业位点与批层校准调度，再确认 StarRocks 写入是否正常。按 Warning 跟进，滞后持续扩大时升级处理。",
+          "severity": "Warning"
+        },
+        {
+          "title": "归属对账差异",
+          "body": "确认业务库里的客户归属与数仓里的归属列是否逐客户一致。健康时两边归属一致，差异数为零。出现差异先定位是哪批客户、哪个字段、最近由哪次写入造成，再决定重算还是修作业。归属差异会直接影响分群与业绩归属，按 Critical 处理。",
+          "severity": "Critical"
+        },
+        {
+          "title": "作业失败与重跑未对账",
+          "body": "确认最近的数仓作业有没有失败，以及重跑之后有没有完成对账。健康时作业全部成功，重跑的退出码为 0，受影响目标表已按窗口对账且累计列与明细重算一致。退出码为 1 说明至少一片失败，为 2 说明一片都没真正跑起来，为 3 说明参数不合法或被重叠守卫拦下。重灌或重跑后必须先等流层吃完再对账，未对账按 Critical 处理。",
+          "severity": "Critical"
         }
       ]
     }

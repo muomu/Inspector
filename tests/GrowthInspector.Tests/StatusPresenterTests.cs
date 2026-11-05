@@ -149,15 +149,6 @@ public sealed class StatusPresenterTests
     }
 
     [Fact]
-    public void Resolved_finding_explains_rule_change()
-    {
-        var resolved = StatusPresenter.FromFinding(FindingStatus.Resolved, FindingCloseReason.RuleChanged);
-
-        Assert.Equal("判据变更", resolved.Sub);
-        Assert.Contains("判据变更", resolved.AriaLabel);
-    }
-
-    [Fact]
     public void Pending_and_canceled_runs_stay_neutral()
     {
         Assert.Equal(StatusState.Neutral, StatusPresenter.FromRun(RunStatus.Pending).State);

@@ -139,8 +139,8 @@ public sealed class GrowthInspectorDbContext(DbContextOptions<GrowthInspectorDbC
             entity.ToTable("ChecklistItems");
             entity.HasKey(x => x.Id);
             entity.Property(x => x.Title).IsRequired().HasMaxLength(300);
+            entity.Property(x => x.Body).IsRequired();
             entity.Property(x => x.Severity).HasConversion<string>().HasMaxLength(20);
-            entity.Property(x => x.Operator).HasConversion<string>().HasMaxLength(20);
             entity.HasIndex(x => new { x.ChecklistId, x.SortOrder });
             entity.HasIndex(x => new { x.ChecklistId, x.IsArchived });
             entity.HasOne(x => x.Checklist)
@@ -197,7 +197,6 @@ public sealed class GrowthInspectorDbContext(DbContextOptions<GrowthInspectorDbC
             entity.HasKey(x => x.Id);
             entity.Property(x => x.Status).HasConversion<string>().HasMaxLength(30);
             entity.Property(x => x.AgentVerdict).HasConversion<string>().HasMaxLength(30);
-            entity.Property(x => x.FrameworkVerdict).HasConversion<string>().HasMaxLength(30);
             entity.HasIndex(x => new { x.ChecklistRunId, x.ChecklistItemId }).IsUnique();
             entity.HasOne(x => x.ChecklistRun)
                 .WithMany(x => x.Results)

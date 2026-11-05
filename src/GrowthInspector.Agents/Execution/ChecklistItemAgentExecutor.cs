@@ -3,26 +3,24 @@ using System.Text.Json;
 using GrowthInspector.Agents.Tools;
 using GrowthInspector.Core.Abstractions;
 using GrowthInspector.Core.Models;
-using GrowthInspector.Core.Options;
 using GrowthInspector.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Options;
 
 namespace GrowthInspector.Agents.Execution;
 
 /// <summary>
 /// 检查项执行 agent：每次执行一个检查项、一个会话。
-/// 流程：组工具集 → 注入手册 / 断言 / finding 历史 → 多轮取证 → 解析 claim →
-/// 按 ToolCallLog 做框架复核 → 合成 CheckResult。
-/// LLM 失败、超时、无 key、claim 非法或复核不一致都返回 Error，不伪造结论。
+/// 流程：组工具集 → 注入项目上下文 / 手册 / 自然语言正文 / finding 历史 → 多轮取证 → 解析 claim。
+/// 工具调用轮次与执行时长均不设上限，跑满为止（仅随外部取消令牌停止）；
+/// LLM 失败、无 key 或 claim 非法都返回 Error，不伪造结论；
+/// 判定完全由 agent 依检查项正文给出（框架不再按结构化断言复核）。
 /// </summary>
 public sealed class ChecklistItemAgentExecutor(
     IChatClient chatClient,
     AgentToolsetFactory toolsetFactory,
     IDbContextFactory<GrowthInspectorDbContext> dbContextFactory,
-    IOptions<InspectionOptions> options,
     ILogger<ChecklistItemAgentExecutor> logger) : IChecklistItemExecutor
 {
     private static readonly JsonSerializerOptions SnapshotJsonOptions = new(JsonSerializerDefaults.Web);
@@ -38,10 +36,6 @@ public sealed class ChecklistItemAgentExecutor(
         var completionTokens = 0;
         AgentToolset? toolset = null;
 
-        var timeoutSeconds = Math.Max(1, options.Value.AgentItemTimeoutSeconds);
-        using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        timeoutCts.CancelAfter(TimeSpan.FromSeconds(timeoutSeconds));
-
         try
         {
             toolset = await toolsetFactory.CreateAsync(
@@ -51,17 +45,17 @@ public sealed class ChecklistItemAgentExecutor(
                     request.ChecklistRunId,
                     request.Item.ItemId,
                     AgentRole.Execution),
-                timeoutCts.Token);
+                cancellationToken);
 
-            var snapshot = await LoadSnapshotAsync(request.ChecklistRunId, timeoutCts.Token);
+            var snapshot = await LoadSnapshotAsync(request.ChecklistRunId, cancellationToken);
             var messages = ExecutionPromptBuilder.Build(request, snapshot);
 
             var loop = await AgentToolLoop.RunAsync(
                 chatClient,
                 toolset,
                 messages,
-                options.Value.AgentMaxTurns,
-                timeoutCts.Token);
+                maxTurns: 0,
+                cancellationToken);
 
             promptTokens = loop.PromptTokens;
             completionTokens = loop.CompletionTokens;
@@ -87,28 +81,23 @@ public sealed class ChecklistItemAgentExecutor(
                     completionTokens);
             }
 
-            var toolCallLogs = await LoadToolCallLogsAsync(
-                request.ChecklistRunId,
-                request.Item.ItemId,
-                timeoutCts.Token);
-            var framework = FrameworkVerdictCalculator.Compute(request.Item, toolCallLogs);
+            var status = claim.Verdict switch
+            {
+                VerdictStatus.Ok => CheckResultStatus.Ok,
+                VerdictStatus.Abnormal => CheckResultStatus.Abnormal,
+                _ => CheckResultStatus.InsufficientEvidence,
+            };
 
-            return BuildResult(request, claim, framework, stopwatch, toolset, promptTokens, completionTokens);
-        }
-        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
-        {
-            logger.LogWarning(
-                "检查项「{Title}」执行超时（{TimeoutSeconds} 秒，runId={RunId}）。",
-                request.Item.Title,
-                timeoutSeconds,
-                request.ChecklistRunId);
-
-            return Failure(
-                $"执行超时（{timeoutSeconds} 秒）。",
-                stopwatch,
-                toolset,
-                promptTokens,
-                completionTokens);
+            return new ChecklistItemExecutionResult(
+                Status: status,
+                Evidence: claim.Evidence,
+                DurationMs: stopwatch.ElapsedMilliseconds,
+                PromptTokens: promptTokens,
+                CompletionTokens: completionTokens,
+                AgentVerdict: claim.Verdict,
+                Narrative: claim.Narrative,
+                Observations: claim.Observations,
+                ToolCallCount: toolset.ToolCallCount);
         }
         catch (OperationCanceledException)
         {
@@ -130,66 +119,6 @@ public sealed class ChecklistItemAgentExecutor(
                 completionTokens);
         }
     }
-
-    private static ChecklistItemExecutionResult BuildResult(
-        ChecklistItemExecutionRequest request,
-        ExecutionClaim claim,
-        FrameworkVerdictResult framework,
-        Stopwatch stopwatch,
-        AgentToolset? toolset,
-        int promptTokens,
-        int completionTokens)
-    {
-        var status = CheckResultStatus.Error;
-        var frameworkVerdict = framework.Verdict;
-        string? errorMessage = null;
-
-        if (request.Item.Operator is null)
-        {
-            // 信息型检查项：正常结果是证据不足，不参与告警。
-            status = CheckResultStatus.InsufficientEvidence;
-        }
-        else if (framework.Verdict == FrameworkVerdictStatus.Error)
-        {
-            status = CheckResultStatus.Error;
-            errorMessage = framework.ErrorMessage;
-        }
-        else if (!IsConsistent(claim.Verdict, framework.Verdict))
-        {
-            status = CheckResultStatus.Error;
-            frameworkVerdict = FrameworkVerdictStatus.Mismatch;
-            errorMessage =
-                $"agent 判定 {claim.Verdict} 与框架复核 {framework.Verdict} 不一致，按 Error 处理、不产生 finding。";
-        }
-        else
-        {
-            status = framework.Verdict == FrameworkVerdictStatus.Ok
-                ? CheckResultStatus.Ok
-                : CheckResultStatus.Abnormal;
-        }
-
-        return new ChecklistItemExecutionResult(
-            Status: status,
-            Evidence: claim.Evidence ?? claim.Value,
-            DurationMs: stopwatch.ElapsedMilliseconds,
-            PromptTokens: promptTokens,
-            CompletionTokens: completionTokens,
-            ErrorMessage: errorMessage,
-            AgentVerdict: claim.Verdict,
-            FrameworkVerdict: frameworkVerdict,
-            RecomputedValue: framework.RecomputedValue,
-            Narrative: claim.Narrative,
-            Observations: claim.Observations,
-            ToolCallCount: toolset?.ToolCallCount ?? 0);
-    }
-
-    private static bool IsConsistent(VerdictStatus agentVerdict, FrameworkVerdictStatus frameworkVerdict)
-        => frameworkVerdict switch
-        {
-            FrameworkVerdictStatus.Ok => agentVerdict == VerdictStatus.Ok,
-            FrameworkVerdictStatus.Abnormal => agentVerdict == VerdictStatus.Abnormal,
-            _ => false,
-        };
 
     private async Task<ChecklistSnapshot?> LoadSnapshotAsync(Guid runId, CancellationToken cancellationToken)
     {
@@ -224,20 +153,6 @@ public sealed class ChecklistItemAgentExecutor(
             logger.LogWarning(ex, "检查单快照解析失败（runId={RunId}），本次只注入当前检查项。", runId);
             return null;
         }
-    }
-
-    private async Task<IReadOnlyList<ToolCallLog>> LoadToolCallLogsAsync(
-        Guid runId,
-        Guid itemId,
-        CancellationToken cancellationToken)
-    {
-        await using var db = await dbContextFactory.CreateDbContextAsync(cancellationToken);
-        return await db.ToolCallLogs
-            .AsNoTracking()
-            .Where(log => log.ChecklistRunId == runId
-                && log.ChecklistItemId == itemId
-                && log.AgentRole == AgentRole.Execution)
-            .ToListAsync(cancellationToken);
     }
 
     private static ChecklistItemExecutionResult Failure(

@@ -49,7 +49,7 @@
 </header>
 
 <p class="page-lede">
-    结构化断言由框架复核，agent 只负责取证：断言成立 = Ok，不成立 = 异常；断言字段全部留空表示信息型，只收集证据、不参与告警。
+    检查项是自然语言描述：正文写清查什么、什么算健康、异常先看哪；执行 agent 按正文取证并自行判定。
 </p>
 
 @if (!loaded)
@@ -114,9 +114,8 @@ else
         <div class="section__body">
             <div class="panel">
                 <p class="panel__copy">
-                    判定型检查项声明结构化断言（工具名 / 参数模板 / 取值路径 / 比较符 / 阈值 / 窗口 / 级别 / RuleVersion）。
-                    <strong>断言成立 = 健康（Ok），不成立 = 异常。</strong>
-                    断言字段全部留空表示信息型，只收集证据、不参与告警。
+                    检查项用自然语言描述：标题 + 正文（查什么 / 什么算健康 / 异常先看哪）+ 严重级别。
+                    <strong>执行 agent 按正文取证并自行判定。</strong>
                 </p>
                 @foreach (var item in itemDrafts)
                 {
@@ -133,66 +132,18 @@ else
                             <label class="field">
                                 <span class="field__label">严重级别</span>
                                 <select class="select" @bind="item.SeverityText">
-                                    <option value="">（信息型）</option>
-                                    <option value="Info">Info</option>
                                     <option value="Warning">Warning</option>
                                     <option value="Critical">Critical</option>
+                                    <option value="Info">Info</option>
                                 </select>
-                            </label>
-                            <label class="field">
-                                <span class="field__label">RuleVersion</span>
-                                <input class="input" type="number" @bind="item.RuleVersion" placeholder="@item.LoadedRuleVersion" />
-                            </label>
-                        </div>
-                        <div class="form-row">
-                            <label class="field">
-                                <span class="field__label">工具名</span>
-                                <input class="input" @bind="item.ToolName" placeholder="如 mock__QueryMetric" />
-                            </label>
-                            <label class="field">
-                                <span class="field__label">取值路径</span>
-                                <input class="input" @bind="item.ValuePath" placeholder="$.value" />
-                            </label>
-                            <label class="field">
-                                <span class="field__label">比较符</span>
-                                <select class="select" @bind="item.OperatorText">
-                                    <option value="">（信息型）</option>
-                                    <option value="Lt">&lt; 阈值</option>
-                                    <option value="Lte">&lt;= 阈值</option>
-                                    <option value="Gt">&gt; 阈值</option>
-                                    <option value="Gte">&gt;= 阈值</option>
-                                    <option value="Eq">== 阈值</option>
-                                    <option value="Ne">!= 阈值</option>
-                                    <option value="Contains">包含阈值</option>
-                                    <option value="NotContains">不包含阈值</option>
-                                </select>
-                            </label>
-                            <label class="field">
-                                <span class="field__label">阈值</span>
-                                <input class="input" @bind="item.Threshold" />
-                            </label>
-                            <label class="field">
-                                <span class="field__label">窗口</span>
-                                <input class="input" @bind="item.Window" placeholder="1h / 24h" />
                             </label>
                         </div>
                         <div class="form-col">
                             <label class="field">
-                                <span class="field__label">参数模板（JSON 对象）</span>
-                                <textarea class="textarea textarea--code" rows="2" @bind="item.ArgumentsTemplate" placeholder="@("{'metric':'http_p99_latency_ms'}")"></textarea>
-                            </label>
-                            <label class="field">
-                                <span class="field__label">数据源提示</span>
-                                <input class="input" @bind="item.DataSourceHint" />
-                            </label>
-                            <label class="field">
-                                <span class="field__label">预期</span>
-                                <input class="input" @bind="item.Expectation" />
+                                <span class="field__label">正文（查什么 / 什么算健康 / 异常先看哪）</span>
+                                <textarea class="textarea" rows="5" @bind="item.Body"></textarea>
                             </label>
                         </div>
-                        <p class="note">
-                            当前规则版本 v@(item.LoadedRuleVersion)；RuleVersion 留空时，判据变化会自动 +1。
-                        </p>
                     </div>
                 }
                 <div class="actions">
@@ -262,43 +213,16 @@ else
 
         public string Title { get; set; } = "";
 
-        public string? DataSourceHint { get; set; }
+        public string Body { get; set; } = "";
 
-        public string? Expectation { get; set; }
-
-        public string? ToolName { get; set; }
-
-        public string? ArgumentsTemplate { get; set; }
-
-        public string? ValuePath { get; set; }
-
-        public string OperatorText { get; set; } = "";
-
-        public string? Threshold { get; set; }
-
-        public string? Window { get; set; }
-
-        public string SeverityText { get; set; } = "";
-
-        public int? RuleVersion { get; set; }
-
-        public int LoadedRuleVersion { get; set; } = 1;
+        public string SeverityText { get; set; } = "Warning";
 
         public static ItemDraft From(ChecklistItemView view) => new()
         {
             Id = view.Id,
             Title = view.Title,
-            DataSourceHint = view.DataSourceHint,
-            Expectation = view.Expectation,
-            ToolName = view.ToolName,
-            ArgumentsTemplate = view.ArgumentsTemplate,
-            ValuePath = view.ValuePath,
-            OperatorText = view.Operator?.ToString() ?? "",
-            Threshold = view.Threshold,
-            Window = view.Window,
-            SeverityText = view.Severity?.ToString() ?? "",
-            RuleVersion = null,
-            LoadedRuleVersion = view.RuleVersion,
+            Body = view.Body,
+            SeverityText = view.Severity?.ToString() ?? "Warning",
         };
     }
 
@@ -455,16 +379,8 @@ else
 
                 var input = new ChecklistItemInput(
                     draft.Title,
-                    NullIfBlank(draft.DataSourceHint),
-                    NullIfBlank(draft.Expectation),
-                    NullIfBlank(draft.ToolName),
-                    NullIfBlank(draft.ArgumentsTemplate),
-                    NullIfBlank(draft.ValuePath),
-                    ParseOperator(draft.OperatorText),
-                    NullIfBlank(draft.Threshold),
-                    NullIfBlank(draft.Window),
-                    ParseSeverity(draft.SeverityText),
-                    draft.RuleVersion);
+                    draft.Body,
+                    ParseSeverity(draft.SeverityText));
 
                 if (draft.Id == Guid.Empty)
                 {
@@ -553,9 +469,6 @@ else
             statusMessage = $"加入执行队列失败：{ex.Message}";
         }
     }
-
-    private static ComparisonOperator? ParseOperator(string? text)
-        => Enum.TryParse<ComparisonOperator>(text, out var value) ? value : null;
 
     private static Severity? ParseSeverity(string? text)
         => Enum.TryParse<Severity>(text, out var severity) ? severity : null;

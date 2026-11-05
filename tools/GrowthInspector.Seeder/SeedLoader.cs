@@ -205,7 +205,7 @@ internal static class SeedLoader
     }
 
     /// <summary>
-    /// stdio server 的参数可能带仓库内相对路径（如 --project tools/GrowthInspector.MockMcpServer）。
+    /// stdio server 的参数可能带仓库内相对路径（如 --project tools/<server 项目>）。
     /// 应用启动时的子进程工作目录不固定，导入时把能解析到仓库内目录或文件的相对参数固化成绝对路径，
     /// 避免执行期因为工作目录不同而拉起失败。无法解析的参数保持原样。
     /// </summary>
@@ -409,116 +409,25 @@ internal static class SeedLoader
     {
         var scope = $"{ChecklistsFileName} 检查单 {checklistName} 第 {sortOrder} 项";
         var title = RequireText(seed.Title, scope + ".title", errors);
-        if (title is null)
+        var body = RequireText(seed.Body, scope + ".body", errors);
+        if (title is null || body is null)
         {
             return null;
         }
 
-        var operatorValue = seed.Operator is null
-            ? (ComparisonOperator?)null
-            : ParseEnum(seed.Operator, ComparisonOperator.Eq, scope + ".operator", errors);
-
-        var severity = seed.Severity is null
-            ? (Severity?)null
-            : ParseEnum(seed.Severity, Severity.Info, scope + ".severity", errors);
-
-        var threshold = ReadThreshold(seed.Threshold, scope, errors);
-        var argumentsTemplate = ReadArguments(seed.Arguments, scope, errors);
-
-        var toolName = seed.ToolName?.Trim();
-        var hasAnyAssertionField = toolName is not null
-            || operatorValue is not null
-            || threshold is not null
-            || seed.ValuePath is not null;
-
-        // 结构断言是三件套：工具名 + 比较符 + 阈值。只给半套会让框架复核落空，必须在 seed 阶段拦下。
-        if (hasAnyAssertionField)
+        if (seed.Severity is null)
         {
-            if (string.IsNullOrWhiteSpace(toolName))
-            {
-                errors.Add(scope + " 声明了断言字段，但缺 toolName");
-            }
-
-            if (operatorValue is null)
-            {
-                errors.Add(scope + " 声明了断言字段，但缺 operator");
-            }
-
-            if (threshold is null)
-            {
-                errors.Add(scope + " 声明了断言字段，但缺 threshold");
-            }
-
-            if (string.IsNullOrWhiteSpace(seed.ValuePath))
-            {
-                errors.Add(scope + " 声明了断言字段，但缺 valuePath");
-            }
-
-            if (string.IsNullOrWhiteSpace(argumentsTemplate))
-            {
-                errors.Add(scope + " 声明了断言字段，但缺 arguments");
-            }
+            errors.Add(scope + " 缺 severity（Info / Warning / Critical）");
+            return null;
         }
 
-        if (operatorValue is not null && severity is null)
-        {
-            errors.Add(scope + " 是判定型检查项（有 operator），必须给 severity");
-        }
-
-        if (severity is not null && operatorValue is null)
-        {
-            errors.Add(scope + " 是信息型检查项（无 operator），不应给 severity");
-        }
-
-        if (seed.RuleVersion <= 0)
-        {
-            errors.Add(scope + " 的 ruleVersion 必须为正整数");
-        }
+        var severity = ParseEnum(seed.Severity, Severity.Info, scope + ".severity", errors);
 
         return new ChecklistItemSpec(
             sortOrder,
             title,
-            seed.DataSourceHint,
-            seed.Expectation,
-            toolName,
-            argumentsTemplate,
-            seed.ValuePath,
-            operatorValue,
-            threshold,
-            seed.Window,
-            severity,
-            seed.RuleVersion);
-    }
-
-    private static string? ReadThreshold(JsonElement? element, string scope, List<string> errors)
-    {
-        if (element is null || element.Value.ValueKind is JsonValueKind.Null or JsonValueKind.Undefined)
-        {
-            return null;
-        }
-
-        return element.Value.ValueKind switch
-        {
-            JsonValueKind.String => element.Value.GetString()?.Trim(),
-            JsonValueKind.Number => element.Value.GetRawText(),
-            JsonValueKind.True or JsonValueKind.False => element.Value.GetRawText(),
-            _ => AddError(errors, $"{scope}.threshold 只能是字符串或数字"),
-        };
-    }
-
-    private static string? ReadArguments(JsonElement? element, string scope, List<string> errors)
-    {
-        if (element is null || element.Value.ValueKind is JsonValueKind.Null or JsonValueKind.Undefined)
-        {
-            return null;
-        }
-
-        if (element.Value.ValueKind != JsonValueKind.Object)
-        {
-            return AddError(errors, $"{scope}.arguments 必须是 JSON 对象");
-        }
-
-        return JsonSerializer.Serialize(element.Value);
+            body,
+            severity);
     }
 
     private static string? AddError(List<string> errors, string message)

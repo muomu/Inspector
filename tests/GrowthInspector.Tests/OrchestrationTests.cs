@@ -103,43 +103,6 @@ public sealed class OrchestrationTests
     }
 
     [Fact]
-    public async Task RunAsync_WhenItemTimesOut_MarksErrorAndContinuesRemainingItems()
-    {
-        var executor = new DelegatingItemExecutor(async (request, cancellationToken) =>
-        {
-            if (request.Item.Title == "慢检查项")
-            {
-                await Task.Delay(TimeSpan.FromSeconds(30), cancellationToken);
-            }
-
-            return OkResult(request.Item.Title);
-        });
-
-        await using var host = await InspectorTestHost.CreateAsync(
-            afterBuilder: services => services.AddSingleton<IChecklistItemExecutor>(executor),
-            configureInspector: options => options.AgentItemTimeoutSeconds = 1);
-
-        var seeded = await SeedChecklistAsync(
-            host,
-            "timeout",
-            ("快检查项", 0),
-            ("慢检查项", 1),
-            ("收尾检查项", 2));
-
-        var orchestrator = host.Services.GetRequiredService<IInspectionOrchestrator>();
-        var runId = await orchestrator.RunAsync(seeded.Checklist.Id, seeded.Environment.Id);
-
-        await using var db = await host.DbFactory.CreateDbContextAsync();
-        var run = await db.ChecklistRuns.Include(x => x.Results).SingleAsync(x => x.Id == runId);
-        Assert.Equal(RunStatus.Succeeded, run.Status);
-        Assert.Equal(3, run.Results.Count);
-
-        var timedOut = Assert.Single(run.Results, x => x.Status == CheckResultStatus.Error);
-        Assert.Contains("超时", timedOut.ErrorMessage);
-        Assert.Equal(2, run.Results.Count(x => x.Status == CheckResultStatus.Ok));
-    }
-
-    [Fact]
     public async Task RunAsync_TwoChecklistsExecuteConcurrently()
     {
         var bothStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -333,7 +296,6 @@ public sealed class OrchestrationTests
             PromptTokens: 10,
             CompletionTokens: 3,
             AgentVerdict: VerdictStatus.Ok,
-            FrameworkVerdict: FrameworkVerdictStatus.Ok,
             Narrative: $"narrative:{title}",
             Observations: [$"observation:{title}"]);
 
@@ -372,12 +334,8 @@ public sealed class OrchestrationTests
             checklist.Items.Add(new ChecklistItem
             {
                 Title = item.Title,
+                Body = $"检查「{item.Title}」是否健康；异常先看工具返回的证据。",
                 SortOrder = item.SortOrder,
-                ToolName = "mock__Query",
-                ArgumentsTemplate = "{}",
-                ValuePath = "$.value",
-                Operator = ComparisonOperator.Eq,
-                Threshold = "1",
                 Severity = Severity.Warning,
             });
         }

@@ -7,7 +7,7 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace GrowthInspector.Tests.Notifications;
 
-/// <summary>TPG-2713：finding 去重、规则版本、恢复与 mock Lark 告警。</summary>
+/// <summary>finding 状态机：agent 判定 Ok / Abnormal 才进入，证据不足 / 出错跳过；恢复与 mock Lark 告警。</summary>
 public sealed class FindingNotifierTests
 {
     [Fact]
@@ -51,7 +51,6 @@ public sealed class FindingNotifierTests
         Assert.Equal(seed.Checklist.Id, payload.RootElement.GetProperty("checklistId").GetGuid());
         Assert.Equal(seed.Item.Id, payload.RootElement.GetProperty("checklistItemId").GetGuid());
         Assert.Equal("Critical", payload.RootElement.GetProperty("severity").GetString());
-        Assert.Equal(1, payload.RootElement.GetProperty("ruleVersion").GetInt32());
         Assert.Contains("value=900", payload.RootElement.GetProperty("evidenceSummary").GetString());
         Assert.Empty(harness.LarkNotifier.Sent);
     }
@@ -89,53 +88,68 @@ public sealed class FindingNotifierTests
     }
 
     [Fact]
-    public async Task RuleVersionChange_ClosesOldFinding_AndReopensNewVersion()
+    public async Task InsufficientEvidence_DoesNotCreateFinding_AndKeepsExistingOpenFinding()
     {
         await using var harness = new NotificationTestHarness();
-        var seed = await harness.SeedAsync(ruleVersion: 1);
+        var seed = await harness.SeedAsync();
         using var scope = harness.Services.CreateScope();
         var notifier = scope.ServiceProvider.GetRequiredService<IFindingNotifier>();
 
-        var firstRun = await harness.AddRunAsync(seed, seed.Prod.Id, [CheckResultSeed.Abnormal(seed.Item.Id)]);
-        await notifier.EvaluateRunAsync(firstRun);
+        // 先有一次 Abnormal，建立 Open finding。
+        var abnormalRun = await harness.AddRunAsync(seed, seed.Prod.Id, [CheckResultSeed.Abnormal(seed.Item.Id)]);
+        await notifier.EvaluateRunAsync(abnormalRun);
+        var opened = Assert.Single(await harness.GetFindingsAsync());
+        Assert.Equal(FindingStatus.Open, opened.Status);
 
-        await harness.UpdateItemRuleVersionAsync(seed.Item.Id, 2);
-        harness.Clock.Advance(TimeSpan.FromHours(1));
-        var secondRun = await harness.AddRunAsync(seed, seed.Prod.Id, [CheckResultSeed.Abnormal(seed.Item.Id, "value=901")]);
-        await notifier.EvaluateRunAsync(secondRun);
+        // InsufficientEvidence 跳过状态机：不建 finding、不发通知，也不关闭已有 finding。
+        harness.Clock.Advance(TimeSpan.FromMinutes(5));
+        var insufficientRun = await harness.AddRunAsync(
+            seed,
+            seed.Prod.Id,
+            [CheckResultSeed.Insufficient(seed.Item.Id, "工具返回为空，无法判断")]);
+        await notifier.EvaluateRunAsync(insufficientRun);
 
-        var findings = await harness.GetFindingsAsync();
-        Assert.Equal(2, findings.Count);
-        var oldFinding = Assert.Single(findings, x => x.RuleVersion == 1);
-        Assert.Equal(FindingStatus.Resolved, oldFinding.Status);
-        Assert.Equal(FindingCloseReason.RuleChanged, oldFinding.CloseReason);
-        Assert.Equal(harness.Clock.UtcNow, oldFinding.ResolvedAt);
+        var finding = Assert.Single(await harness.GetFindingsAsync());
+        Assert.Equal(FindingStatus.Open, finding.Status);
+        Assert.Null(finding.CloseReason);
+        Assert.Null(finding.ResolvedAt);
 
-        var newFinding = Assert.Single(findings, x => x.RuleVersion == 2);
-        Assert.Equal(FindingStatus.Open, newFinding.Status);
-        Assert.Null(newFinding.CloseReason);
-        Assert.Single(findings, x => x.Status == FindingStatus.Open);
-
-        var notifications = await harness.GetNotificationsAsync();
-        Assert.Equal(2, notifications.Count(x => x.Kind == LarkNotificationKind.FindingOpened));
-        var ruleChanged = Assert.Single(notifications, x => x.Kind == LarkNotificationKind.RuleChanged);
-        Assert.Equal(oldFinding.Id, ruleChanged.FindingId);
-        using var payload = JsonDocument.Parse(ruleChanged.PayloadJson);
-        Assert.Equal(1, payload.RootElement.GetProperty("oldRuleVersion").GetInt32());
-        Assert.Equal(2, payload.RootElement.GetProperty("newRuleVersion").GetInt32());
-        Assert.Equal(2, payload.RootElement.GetProperty("ruleVersion").GetInt32());
+        var notification = Assert.Single(await harness.GetNotificationsAsync());
+        Assert.Equal(LarkNotificationKind.FindingOpened, notification.Kind);
     }
 
-    [Theory]
-    [InlineData(VerdictStatus.Ok, FrameworkVerdictStatus.Abnormal)]
-    [InlineData(VerdictStatus.Abnormal, FrameworkVerdictStatus.Ok)]
-    [InlineData(VerdictStatus.Ok, FrameworkVerdictStatus.Mismatch)]
-    [InlineData(VerdictStatus.Abnormal, FrameworkVerdictStatus.Mismatch)]
-    [InlineData(VerdictStatus.Ok, FrameworkVerdictStatus.InsufficientEvidence)]
-    [InlineData(null, null)]
-    public async Task InconsistentVerdict_DoesNotCreateFindingOrNotification(
-        VerdictStatus? agentVerdict,
-        FrameworkVerdictStatus? frameworkVerdict)
+    [Fact]
+    public async Task InsufficientEvidence_OnFreshItem_CreatesNoFindingOrNotification()
+    {
+        await using var harness = new NotificationTestHarness();
+        var seed = await harness.SeedAsync();
+        using var scope = harness.Services.CreateScope();
+        var notifier = scope.ServiceProvider.GetRequiredService<IFindingNotifier>();
+
+        await notifier.EvaluateRunAsync(
+            await harness.AddRunAsync(seed, seed.Prod.Id, [CheckResultSeed.Insufficient(seed.Item.Id)]));
+
+        Assert.Empty(await harness.GetFindingsAsync());
+        Assert.Empty(await harness.GetNotificationsAsync());
+    }
+
+    [Fact]
+    public async Task Ok_WithoutExistingFinding_CreatesNoFindingOrNotification()
+    {
+        await using var harness = new NotificationTestHarness();
+        var seed = await harness.SeedAsync();
+        using var scope = harness.Services.CreateScope();
+        var notifier = scope.ServiceProvider.GetRequiredService<IFindingNotifier>();
+
+        await notifier.EvaluateRunAsync(
+            await harness.AddRunAsync(seed, seed.Prod.Id, [CheckResultSeed.Healthy(seed.Item.Id)]));
+
+        Assert.Empty(await harness.GetFindingsAsync());
+        Assert.Empty(await harness.GetNotificationsAsync());
+    }
+
+    [Fact]
+    public async Task ErrorResult_DoesNotCreateFindingOrNotification()
     {
         await using var harness = new NotificationTestHarness();
         var seed = await harness.SeedAsync();
@@ -145,11 +159,10 @@ public sealed class FindingNotifierTests
         var result = new CheckResultSeed(
             seed.Item.Id,
             CheckResultStatus.Error,
-            agentVerdict,
-            frameworkVerdict,
-            "value=900");
-        var runId = await harness.AddRunAsync(seed, seed.Prod.Id, [result]);
-        await notifier.EvaluateRunAsync(runId);
+            AgentVerdict: null,
+            Evidence: null,
+            ErrorMessage: "LLM 调用失败");
+        await notifier.EvaluateRunAsync(await harness.AddRunAsync(seed, seed.Prod.Id, [result]));
 
         Assert.Empty(await harness.GetFindingsAsync());
         Assert.Empty(await harness.GetNotificationsAsync());
@@ -206,23 +219,16 @@ public sealed class FindingNotifierTests
     }
 
     [Fact]
-    public async Task InformationalItem_DoesNotCreateFinding()
+    public async Task ItemWithoutSeverity_DoesNotCreateFinding()
     {
         await using var harness = new NotificationTestHarness();
-        var seed = await harness.SeedAsync(severity: null, withAssertion: false);
+        var seed = await harness.SeedAsync(severity: null);
         using var scope = harness.Services.CreateScope();
         var notifier = scope.ServiceProvider.GetRequiredService<IFindingNotifier>();
 
+        // 没有严重级别的检查项不参与 finding 与告警，即使 agent 判 Abnormal。
         await notifier.EvaluateRunAsync(
-            await harness.AddRunAsync(
-                seed,
-                seed.Prod.Id,
-                [new CheckResultSeed(
-                    seed.Item.Id,
-                    CheckResultStatus.Ok,
-                    VerdictStatus.Ok,
-                    FrameworkVerdictStatus.Ok,
-                    "value=120")]));
+            await harness.AddRunAsync(seed, seed.Prod.Id, [CheckResultSeed.Abnormal(seed.Item.Id)]));
 
         Assert.Empty(await harness.GetFindingsAsync());
         Assert.Empty(await harness.GetNotificationsAsync());

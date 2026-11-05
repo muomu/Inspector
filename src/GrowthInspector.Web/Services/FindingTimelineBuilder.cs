@@ -21,11 +21,10 @@ public static class FindingTimelineBuilder
     public const int RecentRunLimit = 30;
 
     /// <param name="fallbackSeverity">检查项已删除 / 未配置级别时，用 finding 自己的级别兜底。</param>
-    /// <param name="itemKind">判定型 / 信息型：信息型的证据不足是中性「信息」，不算待证。</param>
+    /// <param name="fallbackSeverity">检查项已删除 / 未配置级别时，用 finding 自己的级别兜底。</param>
     /// <param name="itemResults">该检查项的历史结果，须带 <see cref="CheckResult.ChecklistRun"/>；顺序不限。</param>
     public static IReadOnlyList<FindingTimelineEntry> Build(
         Severity fallbackSeverity,
-        StatusItemKind itemKind,
         IEnumerable<CheckResult> itemResults)
     {
         var byRun = itemResults
@@ -44,7 +43,7 @@ public static class FindingTimelineBuilder
                 x.Status,
                 x.AgentVerdict,
                 string.IsNullOrWhiteSpace(x.Narrative) ? x.ErrorMessage : x.Narrative,
-                StatusPresenter.FromResult(x.Status, fallbackSeverity, itemKind)))
+                StatusPresenter.FromResult(x.Status, fallbackSeverity)))
             .OrderBy(x => x.RunStartedAt)
             .ToList();
     }

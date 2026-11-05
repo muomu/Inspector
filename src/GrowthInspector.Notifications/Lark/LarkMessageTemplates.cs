@@ -14,7 +14,6 @@ public static class LarkMessageTemplates
         string? checklistName,
         string? itemTitle,
         Severity severity,
-        int ruleVersion,
         string? evidenceSummary,
         string? narrative,
         string occurredAt) =>
@@ -25,7 +24,6 @@ public static class LarkMessageTemplates
          - 检查单：{Fallback(checklistName, "（检查单已删除）")}
          - 检查项：{Fallback(itemTitle, "（检查项已删除）")}
          - 级别：{severity}
-         - 规则版本：{ruleVersion}
          - 首次发现：{occurredAt}
          - 说明：{Fallback(narrative, "（无）")}
          - 证据摘要：{Fallback(evidenceSummary, "（无）")}
@@ -37,7 +35,6 @@ public static class LarkMessageTemplates
         string? checklistName,
         string? itemTitle,
         Severity severity,
-        int ruleVersion,
         string firstSeenAt,
         string lastSeenAt,
         string resolvedAt) =>
@@ -48,32 +45,9 @@ public static class LarkMessageTemplates
          - 检查单：{Fallback(checklistName, "（检查单已删除）")}
          - 检查项：{Fallback(itemTitle, "（检查项已删除）")}
          - 级别：{severity}
-         - 规则版本：{ruleVersion}
          - 首次发现：{firstSeenAt}
          - 最近出现：{lastSeenAt}
          - 恢复时间：{resolvedAt}
-         """;
-
-    public static string RuleChanged(
-        string? projectName,
-        string? environmentName,
-        string? checklistName,
-        string? itemTitle,
-        Severity severity,
-        int oldRuleVersion,
-        int newRuleVersion,
-        string? evidenceSummary,
-        string occurredAt) =>
-        $"""
-         **判据变更，旧异常关闭**
-         - 项目：{Fallback(projectName, "（未知项目）")}
-         - 环境：{Fallback(environmentName, "（未知环境）")}
-         - 检查单：{Fallback(checklistName, "（检查单已删除）")}
-         - 检查项：{Fallback(itemTitle, "（检查项已删除）")}
-         - 级别：{severity}
-         - 规则版本：{oldRuleVersion} → {newRuleVersion}
-         - 关闭时间：{occurredAt}
-         - 原异常证据摘要：{Fallback(evidenceSummary, "（无）")}
          """;
 
     private static string Fallback(string? value, string fallback) =>

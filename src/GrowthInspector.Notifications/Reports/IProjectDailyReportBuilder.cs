@@ -32,6 +32,5 @@ public sealed record DailyReportCounters(
     int NewFindings,
     int RecoveredFindings,
     int OngoingFindings,
-    int RuleChangedFindings,
     int FailedItems,
     int Observations);

@@ -1,7 +1,7 @@
 namespace GrowthInspector.Core.Models;
 
 /// <summary>
-/// Lark 通知留痕：新异常 / 恢复 / 判据变更 / 日报各写一条，v1 mock 模式下不真实发送，
+/// Lark 通知留痕：新异常 / 恢复 / 日报各写一条，v1 mock 模式下不真实发送，
 /// 只记录发送意图与报文，供页面、验收与日报核对。
 /// </summary>
 public sealed class LarkNotification

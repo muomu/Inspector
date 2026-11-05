@@ -119,29 +119,11 @@ internal sealed class ChecklistItemSeed
 {
     public string? Title { get; set; }
 
-    public string? DataSourceHint { get; set; }
+    /// <summary>检查项正文：查什么 / 什么算健康 / 异常先看哪。</summary>
+    public string? Body { get; set; }
 
-    public string? Expectation { get; set; }
-
-    public string? ToolName { get; set; }
-
-    /// <summary>工具调用参数（JSON 对象），导入时序列化成 ArgumentsTemplate 字符串。</summary>
-    public JsonElement? Arguments { get; set; }
-
-    public string? ValuePath { get; set; }
-
-    /// <summary>Lt / Lte / Gt / Gte / Eq / Ne / Contains / NotContains；为空表示信息型。</summary>
-    public string? Operator { get; set; }
-
-    /// <summary>阈值，字符串或数字；导入后统一存成字符串。</summary>
-    public JsonElement? Threshold { get; set; }
-
-    public string? Window { get; set; }
-
-    /// <summary>Info / Warning / Critical；判定型检查项必填。</summary>
+    /// <summary>Info / Warning / Critical。</summary>
     public string? Severity { get; set; }
-
-    public int RuleVersion { get; set; } = 1;
 }
 
 // ---------------------------------------------------------------------------
@@ -183,26 +165,8 @@ internal sealed record ChecklistSpec(
 internal sealed record ChecklistItemSpec(
     int SortOrder,
     string Title,
-    string? DataSourceHint,
-    string? Expectation,
-    string? ToolName,
-    string? ArgumentsTemplate,
-    string? ValuePath,
-    ComparisonOperator? Operator,
-    string? Threshold,
-    string? Window,
-    Severity? Severity,
-    int RuleVersion)
-{
-    /// <summary>与 ChecklistItem.HasAssertion 同口径：工具名 + 比较符 + 阈值齐全。</summary>
-    public bool HasAssertion =>
-        !string.IsNullOrWhiteSpace(ToolName)
-        && Operator is not null
-        && !string.IsNullOrWhiteSpace(Threshold);
-
-    /// <summary>与 ChecklistItem.IsJudgement 同口径：有断言且有严重级别。</summary>
-    public bool IsJudgement => HasAssertion && Severity is not null;
-}
+    string Body,
+    Severity? Severity);
 
 /// <summary>seed 校验失败：一次性列出全部错误，便于一次改完。</summary>
 internal sealed class SeedValidationException(IReadOnlyList<string> errors)

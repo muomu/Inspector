@@ -23,10 +23,10 @@ public sealed class InspectionOptions
     /// <summary>每日频率的检查单触发时刻（HH:mm，服务器本地时区）。</summary>
     public string DailyScheduleTime { get; set; } = "10:00";
 
-    /// <summary>执行 agent 单检查项的最大工具调用轮次。</summary>
+    /// <summary>反思 agent 单检查项的最大工具调用轮次（执行 agent 不限轮次）。</summary>
     public int AgentMaxTurns { get; set; } = 12;
 
-    /// <summary>单个检查项的执行超时（秒）。</summary>
+    /// <summary>反思 agent 单个检查项的执行超时（秒）。执行 agent 不设超时。</summary>
     public int AgentItemTimeoutSeconds { get; set; } = 180;
 
     /// <summary>手册检索工具单次返回条数上限。</summary>

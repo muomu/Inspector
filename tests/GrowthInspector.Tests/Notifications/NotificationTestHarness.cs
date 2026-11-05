@@ -45,7 +45,6 @@ internal sealed record CheckResultSeed(
     Guid ChecklistItemId,
     CheckResultStatus Status,
     VerdictStatus? AgentVerdict,
-    FrameworkVerdictStatus? FrameworkVerdict,
     string? Evidence = null,
     string? Narrative = null,
     string? ErrorMessage = null,
@@ -53,10 +52,13 @@ internal sealed record CheckResultSeed(
     int ToolCallCount = 0)
 {
     public static CheckResultSeed Abnormal(Guid itemId, string evidence = "value=900", string? narrative = null) =>
-        new(itemId, CheckResultStatus.Abnormal, VerdictStatus.Abnormal, FrameworkVerdictStatus.Abnormal, evidence, narrative);
+        new(itemId, CheckResultStatus.Abnormal, VerdictStatus.Abnormal, evidence, narrative);
 
     public static CheckResultSeed Healthy(Guid itemId, string evidence = "value=120") =>
-        new(itemId, CheckResultStatus.Ok, VerdictStatus.Ok, FrameworkVerdictStatus.Ok, evidence);
+        new(itemId, CheckResultStatus.Ok, VerdictStatus.Ok, evidence);
+
+    public static CheckResultSeed Insufficient(Guid itemId, string? evidence = null) =>
+        new(itemId, CheckResultStatus.InsufficientEvidence, VerdictStatus.InsufficientEvidence, evidence);
 }
 
 internal sealed record NotificationSeed(
@@ -125,11 +127,10 @@ internal sealed class NotificationTestHarness : IAsyncDisposable
     public async Task<NotificationSeed> SeedAsync(
         int environmentCount = 1,
         Severity? severity = Severity.Critical,
-        int ruleVersion = 1,
         string? webhookUrl = null,
-        bool withAssertion = true,
         string projectName = "示例项目",
-        string itemTitle = "P99 延迟")
+        string itemTitle = "P99 延迟",
+        string itemBody = "检查 P99 延迟是否低于 500ms；超过则先看下游超时与连接池。")
     {
         await EnsureDatabaseAsync();
 
@@ -157,15 +158,9 @@ internal sealed class NotificationTestHarness : IAsyncDisposable
         var item = new ChecklistItem
         {
             Title = itemTitle,
+            Body = itemBody,
             SortOrder = 0,
-            ToolName = withAssertion ? "mock__QueryMetric" : null,
-            ArgumentsTemplate = withAssertion ? "{\"metric\":\"p99\"}" : null,
-            ValuePath = withAssertion ? "$.value" : null,
-            Operator = withAssertion ? ComparisonOperator.Lt : null,
-            Threshold = withAssertion ? "500" : null,
-            Window = withAssertion ? "1h" : null,
             Severity = severity,
-            RuleVersion = ruleVersion,
         };
         checklist.Items.Add(item);
         db.Projects.Add(project);
@@ -180,22 +175,16 @@ internal sealed class NotificationTestHarness : IAsyncDisposable
         string title,
         int sortOrder,
         Severity? severity = Severity.Critical,
-        int ruleVersion = 1)
+        string body = "检查项正文：查什么 / 什么算健康 / 异常先看哪。")
     {
         await using var db = await DbFactory.CreateDbContextAsync();
         var item = new ChecklistItem
         {
             ChecklistId = seed.Checklist.Id,
             Title = title,
+            Body = body,
             SortOrder = sortOrder,
-            ToolName = "mock__QueryMetric",
-            ArgumentsTemplate = "{\"metric\":\"p99\"}",
-            ValuePath = "$.value",
-            Operator = ComparisonOperator.Lt,
-            Threshold = "500",
-            Window = "1h",
             Severity = severity,
-            RuleVersion = ruleVersion,
         };
         db.ChecklistItems.Add(item);
         await db.SaveChangesAsync();
@@ -232,7 +221,6 @@ internal sealed class NotificationTestHarness : IAsyncDisposable
                 ChecklistItemId = result.ChecklistItemId,
                 Status = result.Status,
                 AgentVerdict = result.AgentVerdict,
-                FrameworkVerdict = result.FrameworkVerdict,
                 Evidence = result.Evidence,
                 Narrative = result.Narrative,
                 ErrorMessage = result.ErrorMessage,
@@ -267,7 +255,6 @@ internal sealed class NotificationTestHarness : IAsyncDisposable
         DateTimeOffset? resolvedAt = null,
         FindingCloseReason? closeReason = null,
         Severity severity = Severity.Critical,
-        int ruleVersion = 1,
         string title = "P99 延迟异常",
         string? evidence = "value=900")
     {
@@ -281,7 +268,6 @@ internal sealed class NotificationTestHarness : IAsyncDisposable
             DedupKey = $"{seed.Project.Id}:{environmentId}:{seed.Checklist.Id}:{checklistItemId}:{Guid.NewGuid():N}",
             Severity = severity,
             Status = status,
-            RuleVersion = ruleVersion,
             CloseReason = closeReason,
             Title = title,
             Message = "测试 finding",
@@ -293,14 +279,6 @@ internal sealed class NotificationTestHarness : IAsyncDisposable
         db.Findings.Add(finding);
         await db.SaveChangesAsync();
         return finding;
-    }
-
-    public async Task UpdateItemRuleVersionAsync(Guid itemId, int ruleVersion)
-    {
-        await using var db = await DbFactory.CreateDbContextAsync();
-        var item = await db.ChecklistItems.SingleAsync(x => x.Id == itemId);
-        item.RuleVersion = ruleVersion;
-        await db.SaveChangesAsync();
     }
 
     public async Task<List<Finding>> GetFindingsAsync() =>

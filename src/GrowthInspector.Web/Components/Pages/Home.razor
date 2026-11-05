@@ -236,7 +236,6 @@ else
                                                 <span class="chip">已归档</span>
                                             }
                                         </span>
-                                        <span>规则 v@(row.Finding.RuleVersion)</span>
                                         <span>首次 @row.Finding.FirstSeenAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm")</span>
                                         <span>最近 @row.Finding.LastSeenAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm")</span>
                                     </p>
@@ -298,8 +297,8 @@ else
             }
 
             <p class="note" style="margin-top: 14px;">
-                只有「断言不成立 + 框架复核一致」才进入 Finding；Error / Mismatch 只进日报观察。
-                Finding 按项目、环境、检查单、检查项去重并绑定规则版本；规则变更时旧 finding 以「判据变更」关闭，新版本再开。
+                只有 agent 判 Abnormal 才进入 Finding；证据不足与执行出错只进日报观察。
+                Finding 按项目、环境、检查单、检查项去重；恢复后关闭，持续期间只更新。
             </p>
         </div>
     </section>

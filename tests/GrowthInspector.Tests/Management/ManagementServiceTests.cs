@@ -205,95 +205,72 @@ public sealed class ManagementServiceTests
     }
 
     [Fact]
-    public async Task ChecklistItem_AssertionChange_BumpsRuleVersion_AndRejectsPartialAssertion()
+    public async Task ChecklistItem_RequiresTitleAndBody_AndPersistsNaturalLanguageFields()
     {
         await using var context = await ManagementTestContext.CreateAsync();
         var projectId = await context.Management.CreateProjectAsync(new CreateProjectRequest("Growth"));
         var checklistId = await context.Management.CreateChecklistAsync(
             new CreateChecklistRequest(projectId, "核心链路"));
 
+        // 标题 + 自然语言正文 + 级别 创建。
         var itemId = await context.Management.CreateChecklistItemAsync(
             new CreateChecklistItemRequest(
                 checklistId,
                 new ChecklistItemInput(
                     "P99 延迟",
-                    ToolName: "mock__QueryMetric",
-                    ArgumentsTemplate: "{\"metric\":\"http_p99\"}",
-                    ValuePath: "$.value",
-                    Operator: ComparisonOperator.Lt,
-                    Threshold: "500",
-                    Window: "1h",
-                    Severity: Severity.Critical)));
+                    "检查 P99 延迟是否低于 500ms；超过先看下游超时与连接池。",
+                    Severity.Critical)));
 
         var item = await context.Management.GetChecklistItemAsync(itemId);
         Assert.NotNull(item);
-        Assert.True(item!.HasAssertion);
-        Assert.True(item.IsJudgement);
-        Assert.Equal(1, item.RuleVersion);
+        Assert.Equal("P99 延迟", item!.Title);
+        Assert.Equal("检查 P99 延迟是否低于 500ms；超过先看下游超时与连接池。", item.Body);
+        Assert.Equal(Severity.Critical, item.Severity);
+        Assert.False(item.IsArchived);
 
-        // 判据未变：RuleVersion 不变。
+        // 更新正文与级别。
         await context.Management.UpdateChecklistItemAsync(
             itemId,
-            new UpdateChecklistItemRequest(new ChecklistItemInput(
-                "P99 延迟",
-                ToolName: "mock__QueryMetric",
-                ArgumentsTemplate: "{\"metric\":\"http_p99\"}",
-                ValuePath: "$.value",
-                Operator: ComparisonOperator.Lt,
-                Threshold: "500",
-                Window: "1h",
-                Severity: Severity.Critical)));
-        Assert.Equal(1, (await context.Management.GetChecklistItemAsync(itemId))!.RuleVersion);
+            new UpdateChecklistItemRequest(
+                new ChecklistItemInput(
+                    "P99 延迟",
+                    "检查 P99 延迟是否低于 800ms。",
+                    Severity.Warning)));
+        var updated = await context.Management.GetChecklistItemAsync(itemId);
+        Assert.Equal("检查 P99 延迟是否低于 800ms。", updated!.Body);
+        Assert.Equal(Severity.Warning, updated.Severity);
 
-        // 阈值变化：RuleVersion 自动 +1。
-        await context.Management.UpdateChecklistItemAsync(
-            itemId,
-            new UpdateChecklistItemRequest(new ChecklistItemInput(
-                "P99 延迟",
-                ToolName: "mock__QueryMetric",
-                ArgumentsTemplate: "{\"metric\":\"http_p99\"}",
-                ValuePath: "$.value",
-                Operator: ComparisonOperator.Lt,
-                Threshold: "800",
-                Window: "1h",
-                Severity: Severity.Critical)));
-        Assert.Equal(2, (await context.Management.GetChecklistItemAsync(itemId))!.RuleVersion);
-
-        // 显式给 RuleVersion 时以调用方为准。
-        await context.Management.UpdateChecklistItemAsync(
-            itemId,
-            new UpdateChecklistItemRequest(new ChecklistItemInput(
-                "P99 延迟",
-                ToolName: "mock__QueryMetric",
-                ArgumentsTemplate: "{\"metric\":\"http_p99\"}",
-                ValuePath: "$.value",
-                Operator: ComparisonOperator.Lt,
-                Threshold: "900",
-                Window: "1h",
-                Severity: Severity.Critical,
-                RuleVersion: 7)));
-        Assert.Equal(7, (await context.Management.GetChecklistItemAsync(itemId))!.RuleVersion);
-
-        // 断言字段只填一半：拒绝保存。
-        var partialError = await Assert.ThrowsAsync<ManagementException>(() =>
+        // 标题不能为空。
+        var titleError = await Assert.ThrowsAsync<ManagementException>(() =>
             context.Management.CreateChecklistItemAsync(
                 new CreateChecklistItemRequest(
                     checklistId,
-                    new ChecklistItemInput("半截断言", ToolName: "mock__QueryMetric"))));
-        Assert.Contains("同时填写", partialError.Message);
+                    new ChecklistItemInput("  ", "正文"))));
+        Assert.Contains("不能为空", titleError.Message);
 
-        // 参数模板必须是 JSON 对象。
-        var jsonError = await Assert.ThrowsAsync<ManagementException>(() =>
+        // 正文不能为空。
+        var bodyError = await Assert.ThrowsAsync<ManagementException>(() =>
             context.Management.CreateChecklistItemAsync(
                 new CreateChecklistItemRequest(
                     checklistId,
-                    new ChecklistItemInput(
-                        "坏模板",
-                        ToolName: "mock__QueryMetric",
-                        ArgumentsTemplate: "not-json",
-                        Operator: ComparisonOperator.Lt,
-                        Threshold: "1"))));
-        Assert.Contains("JSON", jsonError.Message);
+                    new ChecklistItemInput("只有标题", "   "))));
+        Assert.Contains("检查项正文不能为空", bodyError.Message);
+
+        // 正文最长 4000 字符。
+        var tooLongError = await Assert.ThrowsAsync<ManagementException>(() =>
+            context.Management.CreateChecklistItemAsync(
+                new CreateChecklistItemRequest(
+                    checklistId,
+                    new ChecklistItemInput("超长正文", new string('长', 4001)))));
+        Assert.Contains("4000", tooLongError.Message);
+
+        // 级别必须是已定义的枚举值。
+        var severityError = await Assert.ThrowsAsync<ManagementException>(() =>
+            context.Management.CreateChecklistItemAsync(
+                new CreateChecklistItemRequest(
+                    checklistId,
+                    new ChecklistItemInput("坏级别", "正文", (Severity)99))));
+        Assert.Contains("严重级别无效", severityError.Message);
     }
 
     [Fact]

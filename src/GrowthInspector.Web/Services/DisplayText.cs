@@ -52,7 +52,6 @@ public static class DisplayText
     public static string CloseReasonText(FindingCloseReason reason) => reason switch
     {
         FindingCloseReason.Recovered => "检查恢复",
-        FindingCloseReason.RuleChanged => "判据变更",
         _ => reason.ToString(),
     };
 

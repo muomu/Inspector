@@ -35,7 +35,6 @@
                 </span>
                 <span><StatusBadge Value="@StatusPresenter.FromSeverity(finding.Severity)" /></span>
                 <span><StatusBadge Value="@StatusPresenter.FromFinding(finding.Status, finding.CloseReason)" /></span>
-                <span>规则 v@(finding.RuleVersion)</span>
             </p>
         }
     </div>
@@ -104,18 +103,10 @@ else
                     {
                         <text>· 未配置级别</text>
                     }
-                    @if (!string.IsNullOrWhiteSpace(assertionSummary))
-                    {
-                        <text>· 断言 <span class="mono">@assertionSummary</span></text>
-                    }
-                    else
-                    {
-                        <text>· 信息型（无断言）</text>
-                    }
                 </p>
-                @if (!string.IsNullOrWhiteSpace(expectation))
+                @if (!string.IsNullOrWhiteSpace(itemBody))
                 {
-                    <p class="result__text">@expectation</p>
+                    <p class="result__text">@itemBody</p>
                 }
             </div>
 
@@ -156,7 +147,7 @@ else
                         <thead>
                             <tr>
                                 <th scope="col">执行时间</th>
-                                <th scope="col">综合结果</th>
+                                <th scope="col">判定结果</th>
                                 <th scope="col">说明</th>
                             </tr>
                         </thead>
@@ -194,8 +185,7 @@ else
     private string? itemTitle;
     private bool itemArchived;
     private Severity? itemSeverity;
-    private string? assertionSummary;
-    private string? expectation;
+    private string? itemBody;
     private IReadOnlyList<FindingTimelineEntry> timeline = [];
     private string? loadError;
 
@@ -226,18 +216,14 @@ else
 
             var item = await db.ChecklistItems
                 .Where(x => x.Id == finding.ChecklistItemId)
-                .Select(x => new ItemContext(
-                    x.Title, x.IsArchived, x.Severity, x.HasAssertion,
-                    x.ToolName, x.ValuePath, x.Operator, x.Threshold, x.Window, x.Expectation))
+                .Select(x => new ItemContext(x.Title, x.IsArchived, x.Severity, x.Body))
                 .AsNoTracking()
                 .FirstOrDefaultAsync();
             itemTitle = item?.Title;
             itemArchived = item?.IsArchived ?? false;
             itemSeverity = item?.Severity;
-            assertionSummary = AssertionSummary(item);
-            expectation = string.IsNullOrWhiteSpace(item?.Expectation) ? null : item!.Expectation;
+            itemBody = string.IsNullOrWhiteSpace(item?.Body) ? null : item!.Body;
 
-            var itemKind = item?.HasAssertion == true ? StatusItemKind.Judgement : StatusItemKind.Informational;
             var results = await db.CheckResults
                 .Include(x => x.ChecklistRun)
                 .Where(x => x.ChecklistItemId == finding.ChecklistItemId
@@ -248,7 +234,7 @@ else
                 .AsNoTracking()
                 .ToListAsync();
 
-            timeline = FindingTimelineBuilder.Build(itemSeverity ?? finding.Severity, itemKind, results);
+            timeline = FindingTimelineBuilder.Build(itemSeverity ?? finding.Severity, results);
         }
         catch (Exception ex)
         {
@@ -260,56 +246,5 @@ else
         string Title,
         bool IsArchived,
         Severity? Severity,
-        bool HasAssertion,
-        string? ToolName,
-        string? ValuePath,
-        ComparisonOperator? Operator,
-        string? Threshold,
-        string? Window,
-        string? Expectation);
-
-    private static string? AssertionSummary(ItemContext? item)
-    {
-        if (item is null || !item.HasAssertion)
-        {
-            return null;
-        }
-
-        var parts = new List<string>();
-        if (!string.IsNullOrWhiteSpace(item.ToolName))
-        {
-            parts.Add(item.ToolName);
-        }
-        if (!string.IsNullOrWhiteSpace(item.ValuePath))
-        {
-            parts.Add(item.ValuePath);
-        }
-        if (item.Operator is { } op)
-        {
-            parts.Add(OperatorText(op));
-        }
-        if (!string.IsNullOrWhiteSpace(item.Threshold))
-        {
-            parts.Add(item.Threshold);
-        }
-        if (!string.IsNullOrWhiteSpace(item.Window))
-        {
-            parts.Add($"窗口 {item.Window}");
-        }
-
-        return parts.Count == 0 ? null : string.Join(" ", parts);
-    }
-
-    private static string OperatorText(ComparisonOperator op) => op switch
-    {
-        ComparisonOperator.Lt => "<",
-        ComparisonOperator.Lte => "≤",
-        ComparisonOperator.Gt => ">",
-        ComparisonOperator.Gte => "≥",
-        ComparisonOperator.Eq => "=",
-        ComparisonOperator.Ne => "≠",
-        ComparisonOperator.Contains => "包含",
-        ComparisonOperator.NotContains => "不包含",
-        _ => op.ToString(),
-    };
+        string Body);
 }

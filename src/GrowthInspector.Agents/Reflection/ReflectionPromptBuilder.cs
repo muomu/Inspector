@@ -42,17 +42,14 @@ public static class ReflectionPromptBuilder
         builder.AppendLine("## 本轮检查项");
         builder.AppendLine($"- Id：{request.Item.ItemId}");
         builder.AppendLine($"- 标题：{request.Item.Title}");
-        builder.AppendLine($"- 规则版本：{request.Item.RuleVersion}");
-        builder.AppendLine($"- 结构化断言：{(request.Item.Operator is null
-            ? "无（信息型）"
-            : $"{request.Item.ToolName} {request.Item.ValuePath} {request.Item.Operator} {request.Item.Threshold}")}");
+        builder.AppendLine($"- 严重级别：{request.Item.Severity?.ToString() ?? "未设置"}");
+        builder.AppendLine("- 正文：");
+        builder.AppendLine(request.Item.Body.Trim());
         builder.AppendLine();
 
         builder.AppendLine("## 执行结果");
         builder.AppendLine($"- 综合状态：{result.Status}");
         builder.AppendLine($"- agent 判定：{result.AgentVerdict?.ToString() ?? "（无）"}");
-        builder.AppendLine($"- 框架复核：{result.FrameworkVerdict?.ToString() ?? "（无）"}");
-        builder.AppendLine($"- 重算取值：{result.RecomputedValue ?? "（无）"}");
         builder.AppendLine($"- 工具调用次数：{result.ToolCallCount}");
         builder.AppendLine($"- 证据：{result.Evidence ?? "（无）"}");
         builder.AppendLine($"- 结论：{result.Narrative ?? "（无）"}");

@@ -298,20 +298,12 @@ public sealed class ConfigWriteTools(IManagementService management)
     // ---- 检查项 ----
 
     [McpServerTool(Name = "checklist_item_create", ReadOnly = false, Destructive = false, Idempotent = false, OpenWorld = false)]
-    [Description("创建检查项。结构化断言要求 toolName / operator / threshold 同时存在；全部留空为信息型。operation 可取 Lt,Lte,Gt,Gte,Eq,Ne,Contains,NotContains；severity 可取 Info,Warning,Critical。")]
+    [Description("创建检查项：title + 自然语言 body（查什么 / 什么算健康 / 异常先看哪）+ 可选 severity（Info,Warning,Critical）。")]
     public Task<string> CreateChecklistItemAsync(
         string checklistId,
         string title,
-        string? dataSourceHint = null,
-        string? expectation = null,
-        string? toolName = null,
-        string? argumentsTemplate = null,
-        string? valuePath = null,
-        string? operation = null,
-        string? threshold = null,
-        string? window = null,
+        string body,
         string? severity = null,
-        int? ruleVersion = null,
         int? sortOrder = null,
         CancellationToken cancellationToken = default)
         => ToolResponse.RunAsync(async () => new
@@ -319,26 +311,18 @@ public sealed class ConfigWriteTools(IManagementService management)
             id = await management.CreateChecklistItemAsync(
                 new CreateChecklistItemRequest(
                     ToolResponse.ParseId(checklistId, "checklistId"),
-                    BuildItemInput(title, dataSourceHint, expectation, toolName, argumentsTemplate, valuePath, operation, threshold, window, severity, ruleVersion),
+                    BuildItemInput(title, body, severity),
                     sortOrder),
                 cancellationToken),
         });
 
     [McpServerTool(Name = "checklist_item_update", ReadOnly = false, Destructive = false, Idempotent = true, OpenWorld = false)]
-    [Description("更新检查项；判据变化且未显式给 ruleVersion 时自动递增 RuleVersion。")]
+    [Description("更新检查项：title + 自然语言 body + 可选 severity。")]
     public Task<string> UpdateChecklistItemAsync(
         string id,
         string title,
-        string? dataSourceHint = null,
-        string? expectation = null,
-        string? toolName = null,
-        string? argumentsTemplate = null,
-        string? valuePath = null,
-        string? operation = null,
-        string? threshold = null,
-        string? window = null,
+        string body,
         string? severity = null,
-        int? ruleVersion = null,
         int? sortOrder = null,
         CancellationToken cancellationToken = default)
         => ToolResponse.RunAsync(async () =>
@@ -346,7 +330,7 @@ public sealed class ConfigWriteTools(IManagementService management)
             await management.UpdateChecklistItemAsync(
                 ToolResponse.ParseId(id),
                 new UpdateChecklistItemRequest(
-                    BuildItemInput(title, dataSourceHint, expectation, toolName, argumentsTemplate, valuePath, operation, threshold, window, severity, ruleVersion),
+                    BuildItemInput(title, body, severity),
                     sortOrder),
                 cancellationToken);
             return null;
@@ -398,26 +382,10 @@ public sealed class ConfigWriteTools(IManagementService management)
 
     private static ChecklistItemInput BuildItemInput(
         string title,
-        string? dataSourceHint,
-        string? expectation,
-        string? toolName,
-        string? argumentsTemplate,
-        string? valuePath,
-        string? operation,
-        string? threshold,
-        string? window,
-        string? severity,
-        int? ruleVersion)
+        string body,
+        string? severity)
         => new(
             title,
-            dataSourceHint,
-            expectation,
-            toolName,
-            argumentsTemplate,
-            valuePath,
-            ToolResponse.ParseOptionalEnum<ComparisonOperator>(operation, "operator"),
-            threshold,
-            window,
-            ToolResponse.ParseOptionalEnum<Severity>(severity, "severity"),
-            ruleVersion);
+            body,
+            ToolResponse.ParseOptionalEnum<Severity>(severity, "severity"));
 }

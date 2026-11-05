@@ -102,9 +102,7 @@ internal static class Program
         Console.WriteLine($"手册：{seed.Runbooks.Count} 份（General {general} / Specialized {specialized}）");
 
         var items = seed.Checklists.SelectMany(x => x.Items).ToList();
-        Console.WriteLine(
-            $"检查单：{seed.Checklists.Count} 张；检查项 {items.Count} 个"
-            + $"（判定型 {items.Count(x => x.IsJudgement)} / 信息型 {items.Count(x => !x.IsJudgement)}）");
+        Console.WriteLine($"检查单：{seed.Checklists.Count} 张；检查项 {items.Count} 个（自然语言描述 + 严重级别）");
 
         foreach (var checklist in seed.Checklists)
         {
