@@ -13,7 +13,7 @@ public enum StatusState
     Running,
 }
 
-/// <summary>检查项类型：断言型参与判定，信息型只收集证据、不参与告警。</summary>
+/// <summary>检查项类型：当前所有检查项都参与判定（保留枚举供展示层扩展）。</summary>
 public enum StatusItemKind
 {
     Judgement,
@@ -85,7 +85,7 @@ public sealed record StatusPresentation(
 
 /// <summary>
 /// 状态枚举到视觉语义的唯一映射。
-/// Error / Mismatch / 证据不足都不是故障：统一「待证」，不给朱红。
+/// Error / 证据不足都不是故障：统一「待证」，不给朱红。
 /// Succeeded 只说明执行结束，文案写「完成」，不写「成功」，也不给通过绿。
 /// </summary>
 public static class StatusPresenter
@@ -100,7 +100,7 @@ public static class StatusPresenter
             "Ok",
             "✓",
             null,
-            "Ok：断言成立且复核一致"),
+            "Ok：符合检查项健康口径"),
 
         CheckResultStatus.Abnormal => FromAbnormal(severity),
 
@@ -228,10 +228,8 @@ public static class StatusPresenter
             StatusState.Ok,
             "已恢复",
             string.Empty,
-            closeReason == FindingCloseReason.RuleChanged ? "判据变更" : "检查恢复",
-            closeReason == FindingCloseReason.RuleChanged
-                ? "已恢复：判据变更关闭"
-                : "已恢复：检查项已恢复",
+            "检查恢复",
+            "已恢复：检查项已恢复",
             StatusPresentationMode.Chip),
 
         _ => new StatusPresentation(

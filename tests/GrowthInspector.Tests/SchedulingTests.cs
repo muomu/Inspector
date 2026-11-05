@@ -99,15 +99,9 @@ public sealed class SchedulingTests
         var itemLater = new ChecklistItem
         {
             Title = "后执行的检查项",
+            Body = "检查 P99 延迟是否低于 500ms；超过先看下游超时与连接池。",
             SortOrder = 2,
-            ToolName = "mock__QueryMetric",
-            ArgumentsTemplate = "{\"metric\":\"p99\"}",
-            ValuePath = "$.value",
-            Operator = ComparisonOperator.Lt,
-            Threshold = "500",
-            Window = "1h",
             Severity = Severity.Critical,
-            RuleVersion = 3,
         };
         var itemFirst = new ChecklistItem { Title = "先执行的检查项", SortOrder = 0 };
         var itemArchived = new ChecklistItem { Title = "已归档检查项", SortOrder = 1, IsArchived = true };
@@ -129,7 +123,6 @@ public sealed class SchedulingTests
             Title = "既有异常",
             Severity = Severity.Critical,
             Status = FindingStatus.Open,
-            RuleVersion = 3,
         };
 
         await using (var db = await host.DbFactory.CreateDbContextAsync())
@@ -153,15 +146,12 @@ public sealed class SchedulingTests
         var snapshot = JsonSerializer.Deserialize<ChecklistSnapshot>(run.SnapshotJson, SnapshotJsonOptions);
         Assert.NotNull(snapshot);
 
-        // 检查项按 SortOrder 排序，归档项不进入快照，断言字段与 RuleVersion 原样固化。
+        // 检查项按 SortOrder 排序，归档项不进入快照，正文与级别原样固化。
         Assert.Equal(["先执行的检查项", "后执行的检查项"], snapshot!.Items.Select(x => x.Title));
         var later = snapshot.Items[1];
         Assert.Equal(2, later.SortOrder);
-        Assert.Equal("mock__QueryMetric", later.ToolName);
-        Assert.Equal(ComparisonOperator.Lt, later.Operator);
-        Assert.Equal("500", later.Threshold);
+        Assert.Equal("检查 P99 延迟是否低于 500ms；超过先看下游超时与连接池。", later.Body);
         Assert.Equal(Severity.Critical, later.Severity);
-        Assert.Equal(3, later.RuleVersion);
 
         // 未归档通用手册 + 未归档被引用专用手册；归档手册不进入快照。
         Assert.Equal(["通用手册"], snapshot.GeneralRunbooks.Select(x => x.Title));
@@ -171,7 +161,6 @@ public sealed class SchedulingTests
         var findingSnapshot = Assert.Single(snapshot.Findings);
         Assert.Equal(itemLater.Id, findingSnapshot.ChecklistItemId);
         Assert.Equal(FindingStatus.Open, findingSnapshot.Status);
-        Assert.Equal(3, findingSnapshot.RuleVersion);
     }
 
     [Fact]

@@ -15,9 +15,9 @@ public sealed class ClusterOverviewBuilderTests
     [Fact]
     public void Missing_node_result_is_pending_and_blocks_complete()
     {
-        var serviceA = Item("service-a 进程心跳", 1);
-        var serviceB = Item("service-b 进程心跳", 2);
-        var mysql = Item("MySQL 连通性", 3);
+        var serviceA = Item("service-a 域运行健康", 1);
+        var serviceB = Item("service-b 域运行健康", 2);
+        var mysql = Item("MySQL 依赖连通", 3);
         var run = Run(
             [serviceA, serviceB, mysql],
             Result(serviceA.ItemId, CheckResultStatus.Ok),
@@ -39,8 +39,8 @@ public sealed class ClusterOverviewBuilderTests
     [Fact]
     public void Empty_snapshot_falls_back_to_results_but_is_not_complete()
     {
-        var serviceA = Item("service-a 进程心跳", 1);
-        var serviceB = Item("service-b 进程心跳", 2);
+        var serviceA = Item("service-a 域运行健康", 1);
+        var serviceB = Item("service-b 域运行健康", 2);
         var run = Run([], Result(serviceA.ItemId, CheckResultStatus.Ok), Result(serviceB.ItemId, CheckResultStatus.Ok));
         run.SnapshotJson = "{}";
         var titles = new Dictionary<Guid, string>
@@ -64,7 +64,7 @@ public sealed class ClusterOverviewBuilderTests
     [Fact]
     public void Abnormal_without_severity_is_pending_not_neutral()
     {
-        var service = Item("service-a 进程心跳", 1, severity: null);
+        var service = Item("service-a 域运行健康", 1, severity: null);
         var run = Run([service], Result(service.ItemId, CheckResultStatus.Abnormal));
 
         var overview = ClusterOverviewBuilder.Build(run);
@@ -78,7 +78,7 @@ public sealed class ClusterOverviewBuilderTests
     [Fact]
     public void Abnormal_info_severity_stays_neutral()
     {
-        var service = Item("service-a 进程心跳", 1, severity: Severity.Info);
+        var service = Item("service-a 域运行健康", 1, severity: Severity.Info);
         var run = Run([service], Result(service.ItemId, CheckResultStatus.Abnormal));
 
         var overview = ClusterOverviewBuilder.Build(run);
@@ -103,7 +103,7 @@ public sealed class ClusterOverviewBuilderTests
     [Fact]
     public void Missing_pipeline_result_counts_pending_and_blocks_complete()
     {
-        var service = Item("service-a 进程心跳", 1);
+        var service = Item("service-a 域运行健康", 1);
         var lag = Item("Kafka 原生消费组 lag", 2);
         var run = Run([service, lag], Result(service.ItemId, CheckResultStatus.Ok));
 
@@ -116,7 +116,7 @@ public sealed class ClusterOverviewBuilderTests
     [Fact]
     public void Snapshot_severity_wins_over_current_item_edits()
     {
-        var service = Item("service-a 进程心跳", 1, severity: Severity.Critical);
+        var service = Item("service-a 域运行健康", 1, severity: Severity.Critical);
         var run = Run([service], Result(service.ItemId, CheckResultStatus.Abnormal));
         run.Results.Single().ChecklistItem = new ChecklistItem
         {
@@ -133,17 +133,18 @@ public sealed class ClusterOverviewBuilderTests
     [Fact]
     public void Escaped_snapshot_parses_and_contains_cluster_items()
     {
-        var service = Item("service-a 进程心跳", 1);
+        var service = Item("service-a 域运行健康", 1);
         var run = Run([service], Result(service.ItemId, CheckResultStatus.Ok));
 
-        Assert.Matches(@"\\u8[fF][dD][bB]", run.SnapshotJson);
+        // 中文以 \uXXXX 转义存储，仍能解析出节点标题。
+        Assert.Matches(@"\\u[0-9A-Fa-f]{4}", run.SnapshotJson);
         Assert.True(ClusterOverviewBuilder.ContainsClusterItems(run.SnapshotJson));
     }
 
     [Fact]
     public void Invalid_snapshot_does_not_throw_and_falls_back_to_results()
     {
-        var service = Item("service-a 进程心跳", 1);
+        var service = Item("service-a 域运行健康", 1);
         var run = Run([service], Result(service.ItemId, CheckResultStatus.Ok));
         run.SnapshotJson = "{";
         run.Results.Single().ChecklistItem = CurrentItem(service.ItemId, service.Title);
@@ -157,22 +158,13 @@ public sealed class ClusterOverviewBuilderTests
     private static ChecklistSnapshotItem Item(
         string title,
         int sortOrder,
-        ComparisonOperator? operation = ComparisonOperator.Eq,
         Severity? severity = Severity.Critical)
         => new(
             Guid.NewGuid(),
             title,
             sortOrder,
-            "mock__GetServiceHealth",
-            "{\"service\":\"service-a\"}",
-            "$.status",
-            operation,
-            "healthy",
-            "5m",
-            severity,
-            1,
-            "mock",
-            "healthy");
+            "按正文判断节点健康：查什么 / 什么算健康 / 异常先看哪。",
+            severity);
 
     private static ChecklistRun Run(
         IReadOnlyList<ChecklistSnapshotItem> items,
@@ -205,13 +197,11 @@ public sealed class ClusterOverviewBuilderTests
     private static CheckResult Result(
         Guid itemId,
         CheckResultStatus status,
-        string? recomputedValue = null,
         string? error = null)
         => new()
         {
             ChecklistItemId = itemId,
             Status = status,
-            RecomputedValue = recomputedValue,
             ErrorMessage = error,
         };
 
@@ -220,12 +210,8 @@ public sealed class ClusterOverviewBuilderTests
         {
             Id = itemId,
             Title = title,
+            Body = "按正文判断节点健康。",
             SortOrder = 1,
-            ToolName = "mock__GetServiceHealth",
-            ValuePath = "$.status",
-            Operator = ComparisonOperator.Eq,
-            Threshold = "healthy",
             Severity = Severity.Critical,
-            RuleVersion = 1,
         };
 }

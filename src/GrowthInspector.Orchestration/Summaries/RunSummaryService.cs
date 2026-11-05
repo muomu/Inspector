@@ -11,7 +11,7 @@ using Microsoft.Extensions.Options;
 namespace GrowthInspector.Orchestration.Summaries;
 
 /// <summary>
-/// 单轮执行摘要 agent：读整轮 CheckResult（含 agent / 框架双判与 Error）、observations、
+/// 单轮执行摘要 agent：读整轮 CheckResult（含 agent 判定与 Error）、observations、
 /// 耗时与 token，调用 IChatClient 生成 Markdown 摘要并落 AiSummary(Kind=RunSummary)。
 /// LLM 未注册 / 无 key / 超时 / 返回空正文时使用规则化模板兜底，FallbackUsed=true，
 /// 模板只陈述已落库事实，不编造结论。
@@ -25,7 +25,7 @@ public sealed class RunSummaryService(
 {
     private const string SystemPrompt =
         "你是巡检执行摘要助手。只能依据用户提供的已落库事实（执行状态、检查项结果、"
-        + "agent 与框架双判、证据、observations、错误、耗时与 token）生成中文 Markdown 摘要；"
+        + "agent 判定、证据、observations、错误、耗时与 token）生成中文 Markdown 摘要；"
         + "不得编造数据、根因或未出现的结论。异常与错误必须如实列出，无法判断时直接写明证据不足。"
         + "不要输出与事实无关的客套话，不要重复大段原始证据。";
 
@@ -215,11 +215,6 @@ public sealed class RunSummaryService(
             builder.AppendLine($"### {index}. {result.ChecklistItem?.Title ?? "检查项已删除"}");
             builder.AppendLine($"- 最终结果：{result.Status}");
             builder.AppendLine($"- agent 判定：{FormatVerdict(result.AgentVerdict)}");
-            builder.AppendLine($"- 框架复核：{FormatVerdict(result.FrameworkVerdict)}");
-            if (!string.IsNullOrWhiteSpace(result.RecomputedValue))
-            {
-                builder.AppendLine($"- 框架重算值：{Truncate(result.RecomputedValue, 300)}");
-            }
 
             if (!string.IsNullOrWhiteSpace(result.ErrorMessage))
             {
@@ -246,7 +241,7 @@ public sealed class RunSummaryService(
             builder.AppendLine();
         }
 
-        builder.AppendLine("请输出：本轮结论、异常项清单（含错误与证据不足）、值得关注但与判据无关的 observations、以及下一步建议。");
+        builder.AppendLine("请输出：本轮结论、异常项清单（含错误与证据不足）、值得关注但与检查项无关的 observations、以及下一步建议。");
         return builder.ToString();
     }
 
@@ -287,7 +282,7 @@ public sealed class RunSummaryService(
         {
             builder.AppendLine(
                 $"- **[{result.Status}]** {result.ChecklistItem?.Title ?? "检查项已删除"}"
-                + $"（agent={FormatVerdict(result.AgentVerdict)}，框架={FormatVerdict(result.FrameworkVerdict)}，{result.DurationMs} ms）");
+                + $"（agent={FormatVerdict(result.AgentVerdict)}，{result.DurationMs} ms）");
             if (!string.IsNullOrWhiteSpace(result.ErrorMessage))
             {
                 builder.AppendLine($"  - 错误：{Truncate(result.ErrorMessage, 300)}");

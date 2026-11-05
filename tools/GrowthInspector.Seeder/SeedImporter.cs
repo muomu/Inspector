@@ -298,16 +298,9 @@ internal sealed class SeedImporter(GrowthInspectorDbContext db)
 
     private static void ApplyItemFields(ChecklistItem item, ChecklistItemSpec spec)
     {
-        item.DataSourceHint = spec.DataSourceHint;
-        item.Expectation = spec.Expectation;
-        item.ToolName = spec.ToolName;
-        item.ArgumentsTemplate = spec.ArgumentsTemplate;
-        item.ValuePath = spec.ValuePath;
-        item.Operator = spec.Operator;
-        item.Threshold = spec.Threshold;
-        item.Window = spec.Window;
+        item.Title = spec.Title;
+        item.Body = spec.Body;
         item.Severity = spec.Severity;
-        item.RuleVersion = spec.RuleVersion;
     }
 
     private async Task UpsertRunbookRefsAsync(

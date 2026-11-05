@@ -53,9 +53,6 @@ public enum FindingCloseReason
 {
     /// <summary>检查恢复正常。</summary>
     Recovered = 0,
-
-    /// <summary>检查项判据（RuleVersion）变更，旧规则关闭。</summary>
-    RuleChanged = 1,
 }
 
 /// <summary>一轮检查单执行的状态。</summary>
@@ -73,19 +70,19 @@ public enum RunStatus
     Skipped = 5,
 }
 
-/// <summary>单个检查项的执行判定结果（综合 agent 判定与框架复核）。</summary>
+/// <summary>单个检查项的执行判定结果。</summary>
 public enum CheckResultStatus
 {
-    /// <summary>符合预期（agent 与框架一致判 Ok，或信息型检查项正常收集证据）。</summary>
+    /// <summary>符合预期（agent 判 Ok）。</summary>
     Ok = 0,
 
-    /// <summary>不符合预期（agent 与框架一致判 Abnormal）。</summary>
+    /// <summary>不符合预期（agent 判 Abnormal）。</summary>
     Abnormal = 1,
 
-    /// <summary>证据不足，无法给出判定（信息型检查项的正常结果）。</summary>
+    /// <summary>证据不足，无法给出判定（agent 如实说明）。</summary>
     InsufficientEvidence = 2,
 
-    /// <summary>执行出错：agent / MCP / LLM 故障，或复核不一致。</summary>
+    /// <summary>执行出错：agent / MCP / LLM 故障，或 claim 无法解析。</summary>
     Error = 3,
 }
 
@@ -95,53 +92,6 @@ public enum VerdictStatus
     Ok = 0,
     Abnormal = 1,
     InsufficientEvidence = 2,
-}
-
-/// <summary>框架按结构化断言从 ToolCallLog 重算得到的判定。</summary>
-public enum FrameworkVerdictStatus
-{
-    Ok = 0,
-    Abnormal = 1,
-    InsufficientEvidence = 2,
-
-    /// <summary>重算失败（证据缺失 / 取值越界 / 断言无法执行），按 Error 处理。</summary>
-    Error = 3,
-
-    /// <summary>与 agent 判定不一致，按 Error 处理、不产生 finding。</summary>
-    Mismatch = 4,
-}
-
-/// <summary>
-/// 结构化断言的比较符。
-/// 语义：断言描述「健康」状态 —— 取值满足断言 = Ok，不满足 = Abnormal（与告警表达式相反，转写时需取反）。
-/// 数值比较用 invariant decimal；Eq/Ne 在双方可解析为数值时按数值比较，否则按序数（ordinal）字符串比较；
-/// Contains/NotContains 按序数子串匹配。
-/// </summary>
-public enum ComparisonOperator
-{
-    /// <summary>取值 &lt; 阈值。</summary>
-    Lt = 0,
-
-    /// <summary>取值 &lt;= 阈值。</summary>
-    Lte = 1,
-
-    /// <summary>取值 &gt; 阈值。</summary>
-    Gt = 2,
-
-    /// <summary>取值 &gt;= 阈值。</summary>
-    Gte = 3,
-
-    /// <summary>取值 == 阈值（数值或字符串）。</summary>
-    Eq = 4,
-
-    /// <summary>取值 != 阈值。</summary>
-    Ne = 5,
-
-    /// <summary>取值包含阈值子串（字符串）。</summary>
-    Contains = 6,
-
-    /// <summary>取值不包含阈值子串（字符串）。</summary>
-    NotContains = 7,
 }
 
 /// <summary>工具调用所属的 agent 角色（审计用）。</summary>
@@ -161,11 +111,8 @@ public enum LarkNotificationKind
     /// <summary>异常恢复。</summary>
     FindingResolved = 1,
 
-    /// <summary>判据变更导致旧 finding 关闭。</summary>
-    RuleChanged = 2,
-
     /// <summary>每日 10:00 日报。</summary>
-    DailyReport = 3,
+    DailyReport = 2,
 }
 
 /// <summary>AI 摘要的类型。</summary>

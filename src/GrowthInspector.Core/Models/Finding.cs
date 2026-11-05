@@ -23,10 +23,7 @@ public sealed class Finding
 
     public FindingStatus Status { get; set; } = FindingStatus.Open;
 
-    /// <summary>产生该 finding 时的检查项规则版本；规则变更后旧 finding 以 RuleChanged 关闭。</summary>
-    public int RuleVersion { get; set; } = 1;
-
-    /// <summary>关闭原因：恢复或判据变更；Open 时为空。</summary>
+    /// <summary>关闭原因：恢复；Open 时为空。</summary>
     public FindingCloseReason? CloseReason { get; set; }
 
     public string Title { get; set; } = string.Empty;

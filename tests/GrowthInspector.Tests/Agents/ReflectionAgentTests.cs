@@ -181,16 +181,8 @@ public sealed class ReflectionAgentTests : IDisposable
             seed.Item.Id,
             "接口延迟检查",
             0,
-            "mock__QueryMetric",
-            """{"metric":"http_p99_latency_ms"}""",
-            "$.value",
-            ComparisonOperator.Lt,
-            "500",
-            "1h",
-            Severity.Critical,
-            1,
-            null,
-            "p99 延迟应低于 500ms。");
+            "检查接口 p99 延迟是否低于 500ms；超过则先看下游超时与连接池。",
+            Severity.Critical);
 
         return new ChecklistItemExecutionRequest(
             seed.Run.Id,
@@ -209,8 +201,6 @@ public sealed class ReflectionAgentTests : IDisposable
             Evidence: "p99=900ms",
             DurationMs: 1200,
             AgentVerdict: VerdictStatus.Abnormal,
-            FrameworkVerdict: FrameworkVerdictStatus.Abnormal,
-            RecomputedValue: "900",
             Narrative: "延迟超过阈值。",
             Observations: ["下游连接池接近上限"],
             ToolCallCount: 1);

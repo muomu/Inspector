@@ -19,7 +19,7 @@ public sealed record ClusterNodeView(
     StatusPresentation Status);
 
 /// <summary>
-/// 集群对象汇总。节点集合以快照里的检查项为准（6 服务 + 4 依赖），
+/// 集群对象汇总。节点集合以快照里的检查项为准（6 域 + 5 依赖），
 /// 结果按 ItemId 左连接；缺失结果按「待证 · 无结果」展示，不能被漏掉后当成健康。
 /// </summary>
 public sealed record ClusterOverview(
@@ -50,8 +50,8 @@ public sealed record ClusterOverview(
 /// </summary>
 public static class ClusterOverviewBuilder
 {
-    private const string ServiceSuffix = "进程心跳";
-    private const string DependencySuffix = "连通性";
+    private const string ServiceSuffix = "域运行健康";
+    private const string DependencySuffix = "依赖连通";
     private const int MaxCandidateRuns = 20;
 
     private static readonly JsonSerializerOptions SnapshotJsonOptions = new(JsonSerializerDefaults.Web);
@@ -77,7 +77,7 @@ public static class ClusterOverviewBuilder
             resultsByItem.TryGetValue(item.ItemId, out var result);
             var status = result is null
                 ? StatusPresenter.MissingResult()
-                : StatusPresenter.FromResult(result.Status, item.Severity, ItemKind(item));
+                : StatusPresenter.FromResult(result.Status, item.Severity);
 
             if (TryParseNode(item.Title, out var name, out var kind))
             {
@@ -105,8 +105,7 @@ public static class ClusterOverviewBuilder
             var title = result.ChecklistItem?.Title ?? string.Empty;
             var status = StatusPresenter.FromResult(
                 result.Status,
-                result.ChecklistItem?.Severity,
-                result.ChecklistItem?.HasAssertion == true ? StatusItemKind.Judgement : StatusItemKind.Informational);
+                result.ChecklistItem?.Severity);
 
             if (TryParseNode(title, out var name, out var kind))
             {
@@ -192,24 +191,13 @@ public static class ClusterOverviewBuilder
                 item!.Id,
                 item.Title,
                 item.SortOrder,
-                item.ToolName,
-                item.ArgumentsTemplate,
-                item.ValuePath,
-                item.Operator,
-                item.Threshold,
-                item.Window,
-                item.Severity,
-                item.RuleVersion,
-                item.DataSourceHint,
-                item.Expectation))
+                item.Body,
+                item.Severity))
             .GroupBy(item => item.ItemId)
             .Select(group => group.First())
             .OrderBy(item => item.SortOrder)
             .ToList();
     }
-
-    private static StatusItemKind ItemKind(ChecklistSnapshotItem item)
-        => item.Operator is null ? StatusItemKind.Informational : StatusItemKind.Judgement;
 
     private static void CountOther(StatusPresentation status, ref int otherPending, ref int otherAttention)
     {
@@ -253,9 +241,7 @@ public static class ClusterOverviewBuilder
         return status.State switch
         {
             StatusState.Ok => null,
-            StatusState.Warning or StatusState.Danger => string.IsNullOrWhiteSpace(result.RecomputedValue)
-                ? status.Sub
-                : $"重算值 {result.RecomputedValue}",
+            StatusState.Warning or StatusState.Danger => status.Sub,
             _ => string.IsNullOrWhiteSpace(status.Sub) ? status.Label : $"{status.Label} · {status.Sub}",
         };
     }

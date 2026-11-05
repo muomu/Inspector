@@ -6,7 +6,7 @@ namespace GrowthInspector.Management.Mcp;
 
 /// <summary>
 /// 管理 MCP 只读工具面：项目 / 环境 / MCP server / 手册 / 检查单 / 执行 / 结果 / 异常 / 摘要 / 工具调用。
-/// 每个工具都强制 limit + cursor 分页；检查项结果同时返回 agent 判定与框架复核判定。
+/// 每个工具都强制 limit + cursor 分页；检查项结果包含 agent 判定、证据与计量。
 /// </summary>
 [McpServerToolType]
 public sealed class ReadTools(IManagementService management)
@@ -130,7 +130,7 @@ public sealed class ReadTools(IManagementService management)
             cancellationToken));
 
     [McpServerTool(Name = "checklist_item_list", ReadOnly = true, Destructive = false, Idempotent = true, OpenWorld = false)]
-    [Description("分页列出检查单下的检查项（含结构化断言）；默认过滤归档。")]
+    [Description("分页列出检查单下的检查项（标题 + 自然语言正文 + 级别）；默认过滤归档。")]
     public Task<string> ListChecklistItemsAsync(
         string checklistId,
         int? limit = null,
@@ -191,7 +191,7 @@ public sealed class ReadTools(IManagementService management)
             cancellationToken));
 
     [McpServerTool(Name = "check_result_list", ReadOnly = true, Destructive = false, Idempotent = true, OpenWorld = false)]
-    [Description("分页列出某轮执行的检查项结果；每条同时包含 agent 判定与框架复核判定。")]
+    [Description("分页列出某轮执行的检查项结果；每条包含 agent 判定、证据与计量。")]
     public Task<string> ListCheckResultsAsync(
         string runId,
         int? limit = null,
@@ -204,7 +204,7 @@ public sealed class ReadTools(IManagementService management)
             cancellationToken));
 
     [McpServerTool(Name = "check_result_get", ReadOnly = true, Destructive = false, Idempotent = true, OpenWorld = false)]
-    [Description("按 id 获取检查项结果（双判与证据）。")]
+    [Description("按 id 获取检查项结果（判定与证据）。")]
     public Task<string> GetCheckResultAsync(string id, CancellationToken cancellationToken = default)
         => ToolResponse.RunAsync(async () => await management.GetCheckResultAsync(
             ToolResponse.ParseId(id),

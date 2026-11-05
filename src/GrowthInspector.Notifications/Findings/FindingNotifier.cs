@@ -11,9 +11,8 @@ using Microsoft.Extensions.Options;
 namespace GrowthInspector.Notifications.Findings;
 
 /// <summary>
-/// finding 状态机（TPG-2713）：
-/// 只有 agent 判定与框架复核一致（同 Ok 或同 Abnormal）的判定型检查项才进入状态机；
-/// 按 (Project, Environment, Checklist, ChecklistItem) 去重，持续只更新、恢复 / 规则变更各发一次通知；
+/// finding 状态机：只有 agent 判定 Ok / Abnormal 的检查项才进入状态机；
+/// 按 (Project, Environment, Checklist, ChecklistItem) 去重，持续只更新、恢复各发一次通知；
 /// 通知统一走 LarkNotificationDispatcher，v1 为 mock 通道，只写 LarkNotification 留痕。
 /// </summary>
 public sealed class FindingNotifier(
@@ -63,27 +62,26 @@ public sealed class FindingNotifier(
             var item = result.ChecklistItem;
             if (item is null)
             {
-                // 检查项已删除（外键为 Restrict，正常不会出现），无法判定严重级别与规则版本。
+                // 检查项已删除（外键为 Restrict，正常不会出现），无法判定严重级别。
                 logger.LogDebug("执行 {RunId} 的检查项 {ItemId} 已不存在，跳过 finding 状态机。", run.Id, result.ChecklistItemId);
                 continue;
             }
 
-            var healthy = ResolveConsistentVerdict(result);
-            if (healthy is null)
+            // 证据不足 / 执行出错不建 finding、不发通知，也不关闭已有 finding。
+            var verdict = result.AgentVerdict;
+            if (verdict is not (VerdictStatus.Ok or VerdictStatus.Abnormal))
             {
-                // 双判不一致、证据不足、执行出错（含 FrameworkVerdict=Mismatch）均不建 finding、不发通知。
                 logger.LogDebug(
-                    "执行 {RunId} 检查项 {ItemId} 双判未通过一致性校验（agent={Agent}，framework={Framework}），跳过 finding 状态机。",
+                    "执行 {RunId} 检查项 {ItemId} 判定为 {Verdict}，跳过 finding 状态机。",
                     run.Id,
                     item.Id,
-                    result.AgentVerdict,
-                    result.FrameworkVerdict);
+                    verdict);
                 continue;
             }
 
-            if (!item.IsJudgement)
+            // 没有严重级别的检查项只留证据，不参与 finding 与告警。
+            if (item.Severity is null)
             {
-                // 信息型检查项只收集证据，不参与 finding 与告警。
                 continue;
             }
 
@@ -93,24 +91,7 @@ public sealed class FindingNotifier(
                     x => x.DedupKey == dedupKey && x.Status == FindingStatus.Open,
                     cancellationToken);
 
-            // 规则版本变更：先以 RuleChanged 关闭旧 finding，再按新版本决定是否重开。
-            if (openFinding is not null && openFinding.RuleVersion != item.RuleVersion)
-            {
-                await CloseForRuleChangedAsync(
-                    db,
-                    run,
-                    project,
-                    openFinding,
-                    item,
-                    checklistName,
-                    environmentName,
-                    timeZone,
-                    now,
-                    cancellationToken);
-                openFinding = null;
-            }
-
-            if (healthy.Value)
+            if (verdict == VerdictStatus.Ok)
             {
                 if (openFinding is not null)
                 {
@@ -149,23 +130,13 @@ public sealed class FindingNotifier(
             {
                 openFinding.LastSeenAt = now;
                 openFinding.Evidence = result.Evidence ?? openFinding.Evidence;
-                openFinding.Severity = item.Severity!.Value;
-                openFinding.RuleVersion = item.RuleVersion;
+                openFinding.Severity = item.Severity.Value;
                 openFinding.Title = item.Title;
                 openFinding.Message = result.Narrative ?? openFinding.Message;
                 await db.SaveChangesAsync(cancellationToken);
             }
         }
     }
-
-    /// <summary>agent 与框架判定一致时返回 true=健康（Ok）、false=异常（Abnormal）；其余组合返回 null。</summary>
-    private static bool? ResolveConsistentVerdict(CheckResult result) =>
-        (result.AgentVerdict, result.FrameworkVerdict) switch
-        {
-            (VerdictStatus.Ok, FrameworkVerdictStatus.Ok) => true,
-            (VerdictStatus.Abnormal, FrameworkVerdictStatus.Abnormal) => false,
-            _ => null,
-        };
 
     private async Task OpenFindingAsync(
         GrowthInspectorDbContext db,
@@ -189,7 +160,6 @@ public sealed class FindingNotifier(
             DedupKey = dedupKey,
             Severity = item.Severity!.Value,
             Status = FindingStatus.Open,
-            RuleVersion = item.RuleVersion,
             Title = item.Title,
             Message = result.Narrative ?? result.ErrorMessage,
             Evidence = result.Evidence,
@@ -208,7 +178,6 @@ public sealed class FindingNotifier(
                 checklistName,
                 item.Title,
                 finding.Severity,
-                finding.RuleVersion,
                 evidenceSummary,
                 finding.Message,
                 occurredAt);
@@ -226,7 +195,6 @@ public sealed class FindingNotifier(
                 checklistItemId = item.Id,
                 itemTitle = item.Title,
                 severity = finding.Severity.ToString(),
-                ruleVersion = finding.RuleVersion,
                 evidenceSummary,
                 message = finding.Message,
                 firstSeenAt = finding.FirstSeenAt,
@@ -253,10 +221,9 @@ public sealed class FindingNotifier(
         await db.SaveChangesAsync(cancellationToken);
 
         logger.LogInformation(
-            "finding 打开：{DedupKey}（级别 {Severity}，规则版本 {RuleVersion}，runId={RunId}）。",
+            "finding 打开：{DedupKey}（级别 {Severity}，runId={RunId}）。",
             finding.DedupKey,
             finding.Severity,
-            finding.RuleVersion,
             run.Id);
     }
 
@@ -284,7 +251,6 @@ public sealed class FindingNotifier(
                 checklistName,
                 finding.Title,
                 finding.Severity,
-                finding.RuleVersion,
                 InspectionTimeZone.Format(finding.FirstSeenAt, timeZone),
                 InspectionTimeZone.Format(finding.LastSeenAt, timeZone),
                 resolvedAt);
@@ -302,7 +268,6 @@ public sealed class FindingNotifier(
                 checklistItemId = finding.ChecklistItemId,
                 itemTitle = finding.Title,
                 severity = finding.Severity.ToString(),
-                ruleVersion = finding.RuleVersion,
                 closeReason = FindingCloseReason.Recovered.ToString(),
                 firstSeenAt = finding.FirstSeenAt,
                 lastSeenAt = finding.LastSeenAt,
@@ -328,91 +293,8 @@ public sealed class FindingNotifier(
         await db.SaveChangesAsync(cancellationToken);
 
         logger.LogInformation(
-            "finding 恢复：{DedupKey}（规则版本 {RuleVersion}，runId={RunId}）。",
+            "finding 恢复：{DedupKey}（runId={RunId}）。",
             finding.DedupKey,
-            finding.RuleVersion,
-            run.Id);
-    }
-
-    private async Task CloseForRuleChangedAsync(
-        GrowthInspectorDbContext db,
-        ChecklistRun run,
-        Project project,
-        Finding finding,
-        ChecklistItem item,
-        string checklistName,
-        string environmentName,
-        TimeZoneInfo timeZone,
-        DateTimeOffset now,
-        CancellationToken cancellationToken)
-    {
-        var oldRuleVersion = finding.RuleVersion;
-        finding.Status = FindingStatus.Resolved;
-        finding.CloseReason = FindingCloseReason.RuleChanged;
-        finding.ResolvedAt = now;
-
-        if (ShouldNotify(finding))
-        {
-            var evidenceSummary = Truncate(finding.Evidence, larkOptions.Value.EvidenceSummaryMaxChars);
-            var occurredAt = InspectionTimeZone.Format(now, timeZone);
-            var markdown = LarkMessageTemplates.RuleChanged(
-                project.Name,
-                environmentName,
-                checklistName,
-                item.Title,
-                finding.Severity,
-                oldRuleVersion,
-                item.RuleVersion,
-                evidenceSummary,
-                occurredAt);
-
-            var payload = new
-            {
-                kind = LarkNotificationKind.RuleChanged.ToString(),
-                findingId = finding.Id,
-                projectId = project.Id,
-                projectName = project.Name,
-                environmentId = run.EnvironmentId,
-                environmentName,
-                checklistId = run.ChecklistId,
-                checklistName,
-                checklistItemId = item.Id,
-                itemTitle = item.Title,
-                severity = finding.Severity.ToString(),
-                oldRuleVersion,
-                newRuleVersion = item.RuleVersion,
-                ruleVersion = item.RuleVersion,
-                closeReason = FindingCloseReason.RuleChanged.ToString(),
-                evidenceSummary,
-                firstSeenAt = finding.FirstSeenAt,
-                lastSeenAt = finding.LastSeenAt,
-                resolvedAt = now,
-                occurredAt = now,
-            };
-
-            var succeeded = await TrySendAsync(
-                db,
-                run,
-                project,
-                finding,
-                LarkNotificationKind.RuleChanged,
-                markdown,
-                payload,
-                now,
-                cancellationToken);
-            if (succeeded)
-            {
-                finding.LastNotifiedAt = now;
-            }
-        }
-
-        await db.SaveChangesAsync(cancellationToken);
-
-        logger.LogInformation(
-            "finding 因判据变更关闭：{DedupKey}（{OldRuleVersion} → {NewRuleVersion}，runId={RunId}）。",
-            finding.DedupKey,
-            oldRuleVersion,
-            item.RuleVersion,
             run.Id);
     }
 

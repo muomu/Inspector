@@ -12,6 +12,6 @@
     <Project Path="tests/GrowthInspector.Tests/GrowthInspector.Tests.csproj" />
   </Folder>
   <Folder Name="/tools/">
-    <Project Path="tools/GrowthInspector.MockMcpServer/GrowthInspector.MockMcpServer.csproj" />
+    <Project Path="tools/GrowthInspector.Seeder/GrowthInspector.Seeder.csproj" />
   </Folder>
 </Solution>

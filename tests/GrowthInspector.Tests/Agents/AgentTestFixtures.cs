@@ -83,7 +83,13 @@ public static class AgentTestData
             Project = project,
             Frequency = ChecklistFrequency.Manual,
         };
-        var item = new ChecklistItem { Title = "测试检查项", Checklist = checklist, SortOrder = 0 };
+        var item = new ChecklistItem
+        {
+            Title = "测试检查项",
+            Body = "检查测试指标是否在健康范围内；异常时先看工具返回的证据。",
+            Checklist = checklist,
+            SortOrder = 0,
+        };
         checklist.Items.Add(item);
         project.Environments.Add(environment);
 

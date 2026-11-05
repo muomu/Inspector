@@ -56,7 +56,6 @@ public sealed class DisplayTextTests
 
     [Theory]
     [InlineData(FindingCloseReason.Recovered, "检查恢复")]
-    [InlineData(FindingCloseReason.RuleChanged, "判据变更")]
     public void CloseReasonText_is_stable(FindingCloseReason reason, string expected)
         => Assert.Equal(expected, DisplayText.CloseReasonText(reason));
 

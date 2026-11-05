@@ -2,7 +2,7 @@
   "project": {
     "name": "Growth",
     "code": "growth",
-    "opsContext": "# Growth 项目上下文\n\n- 项目 Code：`growth`；环境：`prod`（默认）、`beta`。\n- v1 巡检全链路 mock：所有工具来自名称为 `mock` 的 MCP server，工具名形如 `mock__QueryMetric`。\n- 判定语义：断言成立 = 健康；告警表达式（故障条件）进检查项时必须取反。\n- 通知渠道：Lark；v1 为 mock 通道，不真实发送。\n- 调度：小时级检查单在每小时第 0 分钟触发，日报每天 10:00 生成，执行侧审计默认留存 90 天。\n"
+    "opsContext": "# Growth 项目上下文\n\n- 项目：Growth，项目 code 为 `growth`；环境 `prod`（默认）与 `beta`。\n- 巡检对象：Growth 的 6 个业务域（platform、customer、reach、flow、sales、metrics）及依赖（MySQL、Redis、Kafka、StarRocks、Aether）。\n- 检查项口径：以自然语言业务口径描述要查什么、什么算健康、异常先看哪，不绑定具体工具、指标或 SQL。\n- 取证：执行侧只接真实 Grafana MCP（只读），证据来自监控与告警系统。\n- 判定语义：agent 取证后自行判定；证据充分给结论，证据不足如实说明并标注缺口，不臆造结果。\n- 通知：发现异常经 Lark 通知。\n- 调度：小时级检查单在每小时第 0 分钟触发，日报每天 10:00 生成。\n- 审计：执行与判定记录留存 90 天。\n"
   },
   "environments": [
     {
@@ -16,14 +16,10 @@
   ],
   "mcpServers": [
     {
-      "name": "mock",
+      "name": "grafana",
       "transport": "Stdio",
-      "command": "dotnet",
-      "arguments": [
-        "run",
-        "--project",
-        "tools/GrowthInspector.MockMcpServer"
-      ],
+      "command": "/home/muomu/.inspector/bin/mcp-grafana.sh",
+      "arguments": [],
       "isEnabled": true,
       "timeoutSeconds": 60,
       "maxResultBytes": 8192

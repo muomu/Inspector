@@ -215,7 +215,6 @@ else
                                 {
                                     <span>@Shorten(row.Finding.Message!, 96)</span>
                                 }
-                                <span>规则 v@(row.Finding.RuleVersion)</span>
                                 <span>首次 @row.Finding.FirstSeenAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm")</span>
                                 <span>最近 @row.Finding.LastSeenAt.ToLocalTime().ToString("MM-dd HH:mm")</span>
                             </p>
@@ -233,7 +232,7 @@ else
                     </p>
                 }
                 <p class="note" style="margin-top: 14px;">
-                    只有「断言不成立 + 框架复核一致」才进入 Finding；Error / Mismatch 只进日报观察。
+                    只有 agent 判 Abnormal 才进入 Finding；证据不足与执行出错只进日报观察。
                 </p>
             }
         </div>

@@ -333,7 +333,6 @@ public sealed class OrchestrationTests
             PromptTokens: 10,
             CompletionTokens: 3,
             AgentVerdict: VerdictStatus.Ok,
-            FrameworkVerdict: FrameworkVerdictStatus.Ok,
             Narrative: $"narrative:{title}",
             Observations: [$"observation:{title}"]);
 
@@ -372,12 +371,8 @@ public sealed class OrchestrationTests
             checklist.Items.Add(new ChecklistItem
             {
                 Title = item.Title,
+                Body = $"检查「{item.Title}」是否健康；异常先看工具返回的证据。",
                 SortOrder = item.SortOrder,
-                ToolName = "mock__Query",
-                ArgumentsTemplate = "{}",
-                ValuePath = "$.value",
-                Operator = ComparisonOperator.Eq,
-                Threshold = "1",
                 Severity = Severity.Warning,
             });
         }

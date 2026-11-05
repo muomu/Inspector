@@ -162,30 +162,14 @@ else
                                 </span>
                                 <StatusBadge Value="@presentation" />
                                 <span class="result__meta">
-                                    @ConsistencyText(result) · @result.ToolCallCount 次 · @DisplayText.FormatDuration(result.DurationMs) · @(result.PromptTokens + result.CompletionTokens) token
+                                    @result.ToolCallCount 次 · @DisplayText.FormatDuration(result.DurationMs) · @(result.PromptTokens + result.CompletionTokens) token
                                 </span>
-                                @if (row.Mismatch)
-                                {
-                                    <span class="result__meta">复核不一致</span>
-                                }
                             </summary>
                             <div class="result__body">
                                 <div class="result__grid">
                                     <div>
                                         <p class="result__label">Agent 判定</p>
                                         <p class="result__value">@VerdictText(result.AgentVerdict)</p>
-                                    </div>
-                                    <div>
-                                        <p class="result__label">框架复核</p>
-                                        <p class="result__value">@FrameworkVerdictText(result.FrameworkVerdict)</p>
-                                    </div>
-                                    <div>
-                                        <p class="result__label">一致性</p>
-                                        <p class="result__value">@ConsistencyText(result)</p>
-                                    </div>
-                                    <div>
-                                        <p class="result__label">重算值</p>
-                                        <p class="result__value mono">@DisplayText.OrDash(result.RecomputedValue)</p>
                                     </div>
                                     <div>
                                         <p class="result__label">Finding</p>
@@ -195,7 +179,6 @@ else
                                                 <span class="status-line">
                                                     <StatusBadge Value="@StatusPresenter.FromSeverity(finding.Severity)" />
                                                     <StatusBadge Value="@StatusPresenter.FromFinding(finding.Status, finding.CloseReason)" />
-                                                    <span class="mono">v@(finding.RuleVersion)</span>
                                                 </span>
                                                 @if (!string.IsNullOrWhiteSpace(finding.Title))
                                                 {
@@ -215,6 +198,14 @@ else
                                         </p>
                                     </div>
                                 </div>
+
+                                @if (SnapshotItemFor(result.ChecklistItemId) is { } snapshotItem && !string.IsNullOrWhiteSpace(snapshotItem.Body))
+                                {
+                                    <div class="result__section">
+                                        <p class="result__section-title">检查项正文</p>
+                                        <p class="result__text">@snapshotItem.Body</p>
+                                    </div>
+                                }
 
                                 @if (!string.IsNullOrWhiteSpace(result.Narrative))
                                 {
@@ -437,14 +428,13 @@ else
                         {
                             <div class="table-wrap" role="region" aria-label="执行快照检查项" tabindex="0">
                                 <table class="table table--wide">
-                                    <caption class="sr-only">执行快照中的检查项定义、断言与当前状态</caption>
+                                    <caption class="sr-only">执行快照中的检查项定义与当前状态</caption>
                                     <thead>
                                         <tr>
                                             <th scope="col" class="num">顺序</th>
                                             <th scope="col">检查项</th>
-                                            <th scope="col">断言</th>
+                                            <th scope="col">正文</th>
                                             <th scope="col">级别</th>
-                                            <th scope="col">RuleVersion</th>
                                             <th scope="col">当前状态</th>
                                         </tr>
                                     </thead>
@@ -455,7 +445,7 @@ else
                                             <tr>
                                                 <td class="num">@item.SortOrder</td>
                                                 <td>@item.Title</td>
-                                                <td class="mono">@AssertionText(item)</td>
+                                                <td>@item.Body</td>
                                                 <td>
                                                     @if (item.Severity is { } severity)
                                                     {
@@ -466,7 +456,6 @@ else
                                                         <span class="note">未配置</span>
                                                     }
                                                 </td>
-                                                <td class="mono">v@(item.RuleVersion)</td>
                                                 <td>
                                                     @if (info.Missing)
                                                     {
@@ -558,7 +547,6 @@ else
                                         <tr>
                                             <th scope="col">检查项</th>
                                             <th scope="col">状态</th>
-                                            <th scope="col">RuleVersion</th>
                                             <th scope="col">标题</th>
                                             <th scope="col">首次出现</th>
                                             <th scope="col">最近出现</th>
@@ -571,7 +559,6 @@ else
                                             <tr>
                                                 <td>@ItemInfo(finding.ChecklistItemId).Title</td>
                                                 <td><StatusBadge Value="@StatusPresenter.FromFinding(finding.Status)" /></td>
-                                                <td class="mono">v@(finding.RuleVersion)</td>
                                                 <td>@DisplayText.OrDash(finding.Title)</td>
                                                 <td class="mono">@finding.FirstSeenAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm")</td>
                                                 <td class="mono">@finding.LastSeenAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm")</td>
@@ -675,14 +662,13 @@ else
 
     private static readonly JsonSerializerOptions SnapshotJsonOptions = new(JsonSerializerDefaults.Web);
 
-    private sealed record ItemState(string Title, bool Archived, bool HasAssertion);
+    private sealed record ItemState(string Title, bool Archived);
 
     private sealed record ResultRow(
         CheckResult Result,
         string Title,
         bool Archived,
         bool Missing,
-        bool Mismatch,
         Severity? Severity,
         StatusItemKind ItemKind);
 
@@ -798,7 +784,7 @@ else
                 .ToListAsync();
             foreach (var item in items)
             {
-                itemStates[item.Id] = new ItemState(item.Title, item.IsArchived, item.HasAssertion);
+                itemStates[item.Id] = new ItemState(item.Title, item.IsArchived);
             }
 
             if (snapshot is not null)
@@ -854,35 +840,19 @@ else
         }
     }
 
-    /// <summary>
-    /// 信息型判定：优先看执行快照里的断言字段；快照缺失时回退当前检查项的 HasAssertion，
-    /// 仍然判不出来时按判定型处理（宁可待证，不把断言型当信息型）。
-    /// </summary>
-    private bool IsInformational(CheckResult result, ChecklistSnapshotItem? snapshotItem)
-    {
-        if (snapshotItem is not null)
-        {
-            return string.IsNullOrWhiteSpace(snapshotItem.ToolName) && snapshotItem.Operator is null;
-        }
-
-        return itemStates.TryGetValue(result.ChecklistItemId, out var state) && !state.HasAssertion;
-    }
-
     private void BuildResultRows(IReadOnlyList<CheckResult> orderedResults)
     {
         resultRows = orderedResults.Select(result =>
         {
             var info = ItemInfo(result.ChecklistItemId);
             var snapshotItem = SnapshotItemFor(result.ChecklistItemId);
-            var informational = IsInformational(result, snapshotItem);
             return new ResultRow(
                 result,
                 info.Title,
                 info.Archived,
                 info.Missing,
-                IsMismatch(result),
                 snapshotItem?.Severity,
-                informational ? StatusItemKind.Informational : StatusItemKind.Judgement);
+                StatusItemKind.Judgement);
         }).ToList();
 
         verdict = RunVerdictBuilder.Build(resultRows.Select(x => (x.Result.Status, x.Severity, x.ItemKind)));
@@ -973,58 +943,7 @@ else
         return [result.ObservationsJson];
     }
 
-    private static string ResultClass(ResultRow row)
-        => row.Mismatch ? "result result--mismatch" : "result";
-
-    private static bool IsMismatch(CheckResult result)
-    {
-        if (result.FrameworkVerdict == FrameworkVerdictStatus.Mismatch)
-        {
-            return true;
-        }
-
-        if (result.AgentVerdict is { } agent && result.FrameworkVerdict is { } framework)
-        {
-            if (framework is FrameworkVerdictStatus.Error)
-            {
-                return false;
-            }
-
-            return (int)framework != (int)agent;
-        }
-
-        return false;
-    }
-
-    private static string ConsistencyText(CheckResult result)
-    {
-        if (IsMismatch(result))
-        {
-            return "不一致 → Error";
-        }
-
-        if (result.FrameworkVerdict is FrameworkVerdictStatus.Error)
-        {
-            return "复核失败 → Error";
-        }
-
-        if (result.AgentVerdict is null && result.FrameworkVerdict is null)
-        {
-            return "未判定（信息型）";
-        }
-
-        if (result.AgentVerdict is null)
-        {
-            return "缺少 agent 判定";
-        }
-
-        if (result.FrameworkVerdict is null)
-        {
-            return "未复核（信息型）";
-        }
-
-        return "一致";
-    }
+    private static string ResultClass(ResultRow row) => "result";
 
     private static string VerdictText(VerdictStatus? verdict) => verdict switch
     {
@@ -1032,17 +951,6 @@ else
         VerdictStatus.Ok => "Ok",
         VerdictStatus.Abnormal => "Abnormal",
         VerdictStatus.InsufficientEvidence => "证据不足",
-        _ => verdict.ToString() ?? "-",
-    };
-
-    private static string FrameworkVerdictText(FrameworkVerdictStatus? verdict) => verdict switch
-    {
-        null => "-",
-        FrameworkVerdictStatus.Ok => "Ok",
-        FrameworkVerdictStatus.Abnormal => "Abnormal",
-        FrameworkVerdictStatus.InsufficientEvidence => "证据不足",
-        FrameworkVerdictStatus.Error => "复核失败（Error）",
-        FrameworkVerdictStatus.Mismatch => "不一致（Mismatch）",
         _ => verdict.ToString() ?? "-",
     };
 
@@ -1059,53 +967,8 @@ else
     {
         LarkNotificationKind.FindingOpened => "新异常",
         LarkNotificationKind.FindingResolved => "异常恢复",
-        LarkNotificationKind.RuleChanged => "判据变更",
         LarkNotificationKind.DailyReport => "日报",
         _ => kind.ToString(),
     };
 
-    private static string AssertionText(ChecklistSnapshotItem item)
-    {
-        if (string.IsNullOrWhiteSpace(item.ToolName) && item.Operator is null)
-        {
-            return "信息型（无断言）";
-        }
-
-        var parts = new List<string>();
-        if (!string.IsNullOrWhiteSpace(item.ToolName))
-        {
-            parts.Add(item.ToolName);
-        }
-        if (!string.IsNullOrWhiteSpace(item.ValuePath))
-        {
-            parts.Add(item.ValuePath);
-        }
-        if (item.Operator is { } op)
-        {
-            parts.Add(OperatorText(op));
-        }
-        if (!string.IsNullOrWhiteSpace(item.Threshold))
-        {
-            parts.Add(item.Threshold);
-        }
-        if (!string.IsNullOrWhiteSpace(item.Window))
-        {
-            parts.Add($"窗口 {item.Window}");
-        }
-
-        return parts.Count == 0 ? "-" : string.Join(" ", parts);
-    }
-
-    private static string OperatorText(ComparisonOperator op) => op switch
-    {
-        ComparisonOperator.Lt => "<",
-        ComparisonOperator.Lte => "≤",
-        ComparisonOperator.Gt => ">",
-        ComparisonOperator.Gte => "≥",
-        ComparisonOperator.Eq => "=",
-        ComparisonOperator.Ne => "≠",
-        ComparisonOperator.Contains => "包含",
-        ComparisonOperator.NotContains => "不包含",
-        _ => op.ToString(),
-    };
 }

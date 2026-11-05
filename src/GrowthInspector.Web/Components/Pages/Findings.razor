@@ -153,7 +153,6 @@ else
                                         <span class="chip">已归档</span>
                                     }
                                 </span>
-                                <span>规则 v@(row.Finding.RuleVersion)</span>
                                 <span>首次 @row.Finding.FirstSeenAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm")</span>
                                 <span>最近 @row.Finding.LastSeenAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm")</span>
                                 @if (row.Finding.Status == FindingStatus.Resolved)
@@ -182,7 +181,7 @@ else
                     </p>
                 }
                 <p class="note" style="margin-top: 14px;">
-                    Finding 按项目、环境、检查单、检查项去重，绑定规则版本；规则变更时旧 finding 以「判据变更」关闭，新版本再开。
+                    Finding 按项目、环境、检查单、检查项去重；恢复后关闭，持续期间只更新。
                 </p>
             }
         </div>
@@ -440,7 +439,7 @@ else
             observations = latestRun is null
                 ? []
                 : latestRun.Results
-                    // 只把「断言型 + 待证」算作待证观察；信息型 InsufficientEvidence 是中性「信息」，不进来。
+                    // 只把处于「待证」态的检查项算作待证观察（证据不足 / 执行出错）。
                     .Where(x => StatusPresenter
                         .FromResult(x.Status, x.ChecklistItem?.Severity, ItemKind(x))
                         .State == StatusState.Pending)
@@ -485,10 +484,7 @@ else
     private bool IsSeveritySelected(string value)
         => severityFilter.Equals(value, StringComparison.OrdinalIgnoreCase);
 
-    private static StatusItemKind ItemKind(CheckResult result)
-        => result.ChecklistItem?.HasAssertion == true
-            ? StatusItemKind.Judgement
-            : StatusItemKind.Informational;
+    private static StatusItemKind ItemKind(CheckResult result) => StatusItemKind.Judgement;
 
     private static string ObservationText(CheckResult result)
         => DisplayText.Shorten(result.Narrative ?? result.ErrorMessage, 140);

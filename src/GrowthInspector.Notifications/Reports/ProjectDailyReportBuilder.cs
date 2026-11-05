@@ -74,11 +74,11 @@ public sealed class ProjectDailyReportBuilder(
             : await db.Checklists.AsNoTracking()
                 .Where(x => checklistIds.Contains(x.Id))
                 .ToDictionaryAsync(x => x.Id, x => x.Name, cancellationToken);
-        var itemMeta = itemIds.Count == 0
-            ? new Dictionary<Guid, (string Title, int RuleVersion)>()
+        var itemTitles = itemIds.Count == 0
+            ? new Dictionary<Guid, string>()
             : await db.ChecklistItems.AsNoTracking()
                 .Where(x => itemIds.Contains(x.Id))
-                .ToDictionaryAsync(x => x.Id, x => new ValueTuple<string, int>(x.Title, x.RuleVersion), cancellationToken);
+                .ToDictionaryAsync(x => x.Id, x => x.Title, cancellationToken);
         var environmentNames = environmentIds.Count == 0
             ? new Dictionary<Guid, string>()
             : await db.Environments.AsNoTracking()
@@ -94,9 +94,6 @@ public sealed class ProjectDailyReportBuilder(
         var recoveredFindings = findings
             .Where(x => x.Status == FindingStatus.Resolved && x.CloseReason == FindingCloseReason.Recovered)
             .ToList();
-        var ruleChangedFindings = findings
-            .Where(x => x.Status == FindingStatus.Resolved && x.CloseReason == FindingCloseReason.RuleChanged)
-            .ToList();
 
         var failedItems = runs
             .SelectMany(run => run.Results
@@ -105,8 +102,7 @@ public sealed class ProjectDailyReportBuilder(
                     ChecklistName: run.Checklist?.Name ?? "（检查单已删除）",
                     EnvironmentName: run.Environment?.Name ?? "（环境已删除）",
                     ItemTitle: result.ChecklistItem?.Title ?? "（检查项已删除）",
-                    ErrorMessage: result.ErrorMessage,
-                    FrameworkVerdict: result.FrameworkVerdict?.ToString())))
+                    ErrorMessage: result.ErrorMessage)))
             .ToList();
 
         var observations = runs
@@ -139,12 +135,11 @@ public sealed class ProjectDailyReportBuilder(
             NewFindings: newFindings.Count,
             RecoveredFindings: recoveredFindings.Count,
             OngoingFindings: ongoingFindings.Count,
-            RuleChangedFindings: ruleChangedFindings.Count,
             FailedItems: failedItems.Count,
             Observations: observations.Count);
 
         var hasData = counters.Runs > 0
-            || counters.NewFindings + counters.RecoveredFindings + counters.OngoingFindings + counters.RuleChangedFindings > 0
+            || counters.NewFindings + counters.RecoveredFindings + counters.OngoingFindings > 0
             || counters.FailedItems > 0
             || counters.Observations > 0
             || summaries.Count > 0;
@@ -157,14 +152,13 @@ public sealed class ProjectDailyReportBuilder(
             newFindings,
             recoveredFindings,
             ongoingFindings,
-            ruleChangedFindings,
             failedItems,
             observations,
             summaries,
             skippedRuns,
             canceledRuns,
             checklistNames,
-            itemMeta,
+            itemTitles,
             environmentNames);
 
         logger.LogDebug(
@@ -192,14 +186,13 @@ public sealed class ProjectDailyReportBuilder(
         IReadOnlyList<Finding> newFindings,
         IReadOnlyList<Finding> recoveredFindings,
         IReadOnlyList<Finding> ongoingFindings,
-        IReadOnlyList<Finding> ruleChangedFindings,
         IReadOnlyList<FailedItemEntry> failedItems,
         IReadOnlyList<ObservationEntry> observations,
         IReadOnlyList<SummaryEntry> summaries,
         IReadOnlyList<ChecklistRun> skippedRuns,
         IReadOnlyList<ChecklistRun> canceledRuns,
         IReadOnlyDictionary<Guid, string> checklistNames,
-        IReadOnlyDictionary<Guid, (string Title, int RuleVersion)> itemMeta,
+        IReadOnlyDictionary<Guid, string> itemTitles,
         IReadOnlyDictionary<Guid, string> environmentNames)
     {
         var builder = new StringBuilder();
@@ -210,25 +203,21 @@ public sealed class ProjectDailyReportBuilder(
 
         builder.AppendLine("## 概览");
         builder.AppendLine($"- 执行轮次：{counters.Runs}（成功 {counters.Succeeded} / 失败 {counters.Failed} / 跳过 {counters.Skipped} / 取消 {counters.Canceled}）");
-        builder.AppendLine($"- finding：新增 {counters.NewFindings} / 恢复 {counters.RecoveredFindings} / 持续 {counters.OngoingFindings} / 判据变更 {counters.RuleChangedFindings}");
+        builder.AppendLine($"- finding：新增 {counters.NewFindings} / 恢复 {counters.RecoveredFindings} / 持续 {counters.OngoingFindings}");
         builder.AppendLine($"- 失败检查项：{counters.FailedItems}");
         builder.AppendLine($"- 规则外观察：{counters.Observations}");
         builder.AppendLine();
 
         builder.AppendLine("## 新增异常");
-        AppendFindings(builder, newFindings, checklistNames, itemMeta, environmentNames, timeZone, includeResolvedAt: false);
+        AppendFindings(builder, newFindings, checklistNames, itemTitles, environmentNames, timeZone, includeResolvedAt: false);
         builder.AppendLine();
 
         builder.AppendLine("## 恢复异常");
-        AppendFindings(builder, recoveredFindings, checklistNames, itemMeta, environmentNames, timeZone, includeResolvedAt: true);
+        AppendFindings(builder, recoveredFindings, checklistNames, itemTitles, environmentNames, timeZone, includeResolvedAt: true);
         builder.AppendLine();
 
         builder.AppendLine("## 持续异常");
-        AppendFindings(builder, ongoingFindings, checklistNames, itemMeta, environmentNames, timeZone, includeResolvedAt: false);
-        builder.AppendLine();
-
-        builder.AppendLine("## 判据变更");
-        AppendFindings(builder, ruleChangedFindings, checklistNames, itemMeta, environmentNames, timeZone, includeResolvedAt: true);
+        AppendFindings(builder, ongoingFindings, checklistNames, itemTitles, environmentNames, timeZone, includeResolvedAt: false);
         builder.AppendLine();
 
         builder.AppendLine("## 失败检查项");
@@ -240,9 +229,8 @@ public sealed class ProjectDailyReportBuilder(
         {
             foreach (var failed in failedItems)
             {
-                var framework = string.IsNullOrWhiteSpace(failed.FrameworkVerdict) ? string.Empty : $"（框架复核：{failed.FrameworkVerdict}）";
                 builder.AppendLine(
-                    $"- {failed.ChecklistName} / {failed.ItemTitle} @ {failed.EnvironmentName}：{failed.ErrorMessage ?? "（无错误信息）"}{framework}");
+                    $"- {failed.ChecklistName} / {failed.ItemTitle} @ {failed.EnvironmentName}：{failed.ErrorMessage ?? "（无错误信息）"}");
             }
         }
 
@@ -306,7 +294,7 @@ public sealed class ProjectDailyReportBuilder(
         StringBuilder builder,
         IReadOnlyList<Finding> findings,
         IReadOnlyDictionary<Guid, string> checklistNames,
-        IReadOnlyDictionary<Guid, (string Title, int RuleVersion)> itemMeta,
+        IReadOnlyDictionary<Guid, string> itemTitles,
         IReadOnlyDictionary<Guid, string> environmentNames,
         TimeZoneInfo timeZone,
         bool includeResolvedAt)
@@ -320,7 +308,7 @@ public sealed class ProjectDailyReportBuilder(
         foreach (var finding in findings)
         {
             var checklistName = checklistNames.GetValueOrDefault(finding.ChecklistId, "（检查单已删除）");
-            var itemTitle = itemMeta.TryGetValue(finding.ChecklistItemId, out var item) ? item.Title : finding.Title;
+            var itemTitle = itemTitles.GetValueOrDefault(finding.ChecklistItemId, finding.Title);
             var environmentName = environmentNames.GetValueOrDefault(finding.EnvironmentId, "（环境已删除）");
             var line = $"- [{finding.Severity}] {finding.Title}（{checklistName} / {itemTitle} @ {environmentName}，首次 {InspectionTimeZone.Format(finding.FirstSeenAt, timeZone)}";
 
@@ -331,14 +319,6 @@ public sealed class ProjectDailyReportBuilder(
             else
             {
                 line += $"，最近 {InspectionTimeZone.Format(finding.LastSeenAt, timeZone)}";
-            }
-
-            if (finding.CloseReason == FindingCloseReason.RuleChanged)
-            {
-                var currentRuleVersion = itemMeta.TryGetValue(finding.ChecklistItemId, out var ruleItem)
-                    ? ruleItem.RuleVersion
-                    : finding.RuleVersion;
-                line += $"，规则版本 {finding.RuleVersion} → {currentRuleVersion}";
             }
 
             builder.AppendLine(line + "）");
@@ -377,8 +357,7 @@ public sealed class ProjectDailyReportBuilder(
         string ChecklistName,
         string EnvironmentName,
         string ItemTitle,
-        string? ErrorMessage,
-        string? FrameworkVerdict);
+        string? ErrorMessage);
 
     private sealed record ObservationEntry(
         string ChecklistName,

@@ -284,8 +284,6 @@ public sealed class ChecklistRunOrchestrator(
             ChecklistItemId = checklistItemId,
             Status = execution.Status,
             AgentVerdict = execution.AgentVerdict,
-            FrameworkVerdict = execution.FrameworkVerdict,
-            RecomputedValue = execution.RecomputedValue,
             Narrative = execution.Narrative,
             ObservationsJson = execution.Observations is { Count: > 0 }
                 ? JsonSerializer.Serialize(execution.Observations, ChecklistRunFactory.SnapshotJsonOptions)

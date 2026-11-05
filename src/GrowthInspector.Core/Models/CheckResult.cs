@@ -13,17 +13,11 @@ public sealed class CheckResult
 
     public ChecklistItem? ChecklistItem { get; set; }
 
-    /// <summary>最终结果：由 agent 判定与框架复核共同决定。</summary>
+    /// <summary>最终结果：由 agent 判定转换而来（Ok / Abnormal / InsufficientEvidence / Error）。</summary>
     public CheckResultStatus Status { get; set; } = CheckResultStatus.Error;
 
     /// <summary>agent 给出的判定（取证后的 claim）。</summary>
     public VerdictStatus? AgentVerdict { get; set; }
-
-    /// <summary>框架按结构化断言从 ToolCallLog 重算得到的判定。</summary>
-    public FrameworkVerdictStatus? FrameworkVerdict { get; set; }
-
-    /// <summary>框架重算得到的实际取值（便于页面与日报核对）。</summary>
-    public string? RecomputedValue { get; set; }
 
     /// <summary>agent 的叙述性说明（narrative）。</summary>
     public string? Narrative { get; set; }

@@ -165,39 +165,18 @@ public sealed record ChecklistItemView(
     Guid Id,
     Guid ChecklistId,
     string Title,
+    string Body,
     int SortOrder,
-    string? DataSourceHint,
-    string? Expectation,
-    string? ToolName,
-    string? ArgumentsTemplate,
-    string? ValuePath,
-    ComparisonOperator? Operator,
-    string? Threshold,
-    string? Window,
     Severity? Severity,
-    int RuleVersion,
     bool IsArchived,
-    bool HasAssertion,
-    bool IsJudgement,
     DateTimeOffset CreatedAt,
     DateTimeOffset UpdatedAt);
 
-/// <summary>
-/// 检查项输入。结构化断言整体留空表示信息型；填写任意一项则要求工具名 / 比较符 / 阈值同时存在。
-/// <see cref="RuleVersion"/> 为 null 时：创建用 1，更新时若判据变化则自动 +1。
-/// </summary>
+/// <summary>检查项输入：标题 + 自然语言正文 + 严重级别。</summary>
 public sealed record ChecklistItemInput(
     string Title,
-    string? DataSourceHint = null,
-    string? Expectation = null,
-    string? ToolName = null,
-    string? ArgumentsTemplate = null,
-    string? ValuePath = null,
-    ComparisonOperator? Operator = null,
-    string? Threshold = null,
-    string? Window = null,
-    Severity? Severity = null,
-    int? RuleVersion = null);
+    string Body,
+    Severity? Severity = null);
 
 public sealed record CreateChecklistItemRequest(Guid ChecklistId, ChecklistItemInput Item, int? SortOrder = null);
 
@@ -231,7 +210,7 @@ public sealed record ChecklistRunView(
     int ResultCount,
     string? ErrorMessage);
 
-/// <summary>检查项结果：同时给出 agent 判定与框架复核判定，供管理 MCP 只读核对。</summary>
+/// <summary>检查项结果：agent 判定、证据与计量，供管理 MCP 只读核对。</summary>
 public sealed record CheckResultView(
     Guid Id,
     Guid ChecklistRunId,
@@ -239,8 +218,6 @@ public sealed record CheckResultView(
     string ChecklistItemTitle,
     CheckResultStatus Status,
     VerdictStatus? AgentVerdict,
-    FrameworkVerdictStatus? FrameworkVerdict,
-    string? RecomputedValue,
     string? Narrative,
     string? Evidence,
     string? ObservationsJson,
@@ -262,7 +239,6 @@ public sealed record FindingView(
     Severity Severity,
     FindingStatus Status,
     FindingCloseReason? CloseReason,
-    int RuleVersion,
     string? Evidence,
     DateTimeOffset FirstSeenAt,
     DateTimeOffset LastSeenAt,

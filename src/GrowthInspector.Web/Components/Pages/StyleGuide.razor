@@ -87,8 +87,8 @@
             <span class="type-row__label">Body · 16/28.8</span>
             <div class="type-row__sample">
                 <p class="type-body">
-                    Agent 多轮调用 MCP 工具取证并给出 claim，框架按同一份 ToolCallLog 重算 ValuePath；
-                    一致才落 Ok / Abnormal，不一致或证据不足落 Error，只进日报观察。
+                    Agent 多轮调用 MCP 工具取证，再依检查项正文给出判定：Ok / Abnormal / 证据不足；
+                    证据不足与执行出错只进日报观察，不建 Finding、不发 Lark。
                 </p>
             </div>
         </div>
@@ -110,7 +110,7 @@
     <div class="section__body">
         <div class="status-row">
             <span class="status status--ok"><span class="status__glyph" aria-hidden="true">✓</span>Ok</span>
-            <p class="status-row__desc">断言成立、框架复核一致；低饱和，不铺色。</p>
+            <p class="status-row__desc">符合检查项健康口径；低饱和，不铺色。</p>
         </div>
         <div class="status-row">
             <span class="status status--warn"><span class="status__glyph" aria-hidden="true">▲</span>注意</span>
@@ -122,11 +122,11 @@
         </div>
         <div class="status-row">
             <span class="status status--pending"><span class="status__glyph" aria-hidden="true">◇</span>待证</span>
-            <p class="status-row__desc">Error / Mismatch / 证据不足；不是故障，进日报观察。</p>
+            <p class="status-row__desc">Error / 证据不足；不是故障，进日报观察。</p>
         </div>
         <div class="status-row">
             <span class="status status--idle"><span class="status__glyph" aria-hidden="true">—</span>中性</span>
-            <p class="status-row__desc">Pending / Skipped / 信息型；不参与告警。</p>
+            <p class="status-row__desc">Pending / Skipped；不参与告警。</p>
         </div>
         <div class="status-row">
             <span class="status status--running"><span class="status__glyph" aria-hidden="true">◉</span>运行中</span>
@@ -270,16 +270,16 @@
                         <p class="evidence__value">死信 topic 到达量（growth.ekyc.dlq）</p>
                     </div>
                     <div>
-                        <p class="evidence__label">断言</p>
-                        <p class="evidence__value"><code>$.value</code> Lte 0 · 窗口 15m · 级别 Critical</p>
+                        <p class="evidence__label">检查项正文</p>
+                        <p class="evidence__value">确认死信消息到达量是否为零；有到达按 Critical 处理，先读失败类型再分流。</p>
                     </div>
                     <div>
                         <p class="evidence__label">Agent claim</p>
                         <p class="evidence__value">Abnormal · 37 条 · 疑似消费者重试耗尽</p>
                     </div>
                     <div>
-                        <p class="evidence__label">框架复核</p>
-                        <p class="evidence__value">一致 · 37 ≤ 0 不成立 → Abnormal · Finding 已建</p>
+                        <p class="evidence__label">判定</p>
+                        <p class="evidence__value">Abnormal · 证据 37 条 · Finding 已建</p>
                     </div>
                 </div>
                 <pre class="code">{
@@ -292,9 +292,9 @@
 
         <div class="two-col" style="margin-top: 26px;">
             <div class="callout callout--quote">
-                <h3 class="callout__title">Agent 取证，框架重算；两边不一致就不下结论。</h3>
+                <h3 class="callout__title">Agent 取证后自行判定；证据不足就不下结论。</h3>
                 <p class="callout__copy">
-                    一致才落 Ok / Abnormal；不一致或证据不足落 Error，不建 Finding、不发 Lark，只进日报观察。
+                    只有 Ok / Abnormal 进入 Finding 状态机；证据不足与执行出错落「待证」，不建 Finding、不发 Lark，只进日报观察。
                 </p>
             </div>
             <div class="empty empty--ok">

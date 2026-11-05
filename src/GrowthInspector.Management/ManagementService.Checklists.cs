@@ -193,20 +193,10 @@ public sealed partial class ManagementService
                 x.Id,
                 x.ChecklistId,
                 x.Title,
+                x.Body,
                 x.SortOrder,
-                x.DataSourceHint,
-                x.Expectation,
-                x.ToolName,
-                x.ArgumentsTemplate,
-                x.ValuePath,
-                x.Operator,
-                x.Threshold,
-                x.Window,
                 x.Severity,
-                x.RuleVersion,
                 x.IsArchived,
-                x.ToolName != null && x.Operator != null && x.Threshold != null,
-                x.ToolName != null && x.Operator != null && x.Threshold != null && x.Severity != null,
                 x.CreatedAt,
                 x.UpdatedAt));
 
@@ -222,20 +212,10 @@ public sealed partial class ManagementService
                 x.Id,
                 x.ChecklistId,
                 x.Title,
+                x.Body,
                 x.SortOrder,
-                x.DataSourceHint,
-                x.Expectation,
-                x.ToolName,
-                x.ArgumentsTemplate,
-                x.ValuePath,
-                x.Operator,
-                x.Threshold,
-                x.Window,
                 x.Severity,
-                x.RuleVersion,
                 x.IsArchived,
-                x.ToolName != null && x.Operator != null && x.Threshold != null,
-                x.ToolName != null && x.Operator != null && x.Threshold != null && x.Severity != null,
                 x.CreatedAt,
                 x.UpdatedAt))
             .SingleOrDefaultAsync(cancellationToken);
@@ -258,17 +238,9 @@ public sealed partial class ManagementService
         {
             ChecklistId = request.ChecklistId,
             Title = input.Title,
+            Body = input.Body,
             SortOrder = sortOrder,
-            DataSourceHint = input.DataSourceHint,
-            Expectation = input.Expectation,
-            ToolName = input.ToolName,
-            ArgumentsTemplate = input.ArgumentsTemplate,
-            ValuePath = input.ValuePath,
-            Operator = input.Operator,
-            Threshold = input.Threshold,
-            Window = input.Window,
             Severity = input.Severity,
-            RuleVersion = input.RuleVersion ?? 1,
         };
 
         db.ChecklistItems.Add(item);
@@ -287,32 +259,14 @@ public sealed partial class ManagementService
         var item = await db.ChecklistItems.SingleOrDefaultAsync(x => x.Id == id, cancellationToken)
             ?? throw new ManagementException("检查项不存在。");
 
-        var assertionChanged =
-            item.ToolName != input.ToolName
-            || item.ArgumentsTemplate != input.ArgumentsTemplate
-            || item.ValuePath != input.ValuePath
-            || item.Operator != input.Operator
-            || item.Threshold != input.Threshold
-            || item.Window != input.Window
-            || item.Severity != input.Severity;
-
         item.Title = input.Title;
+        item.Body = input.Body;
+        item.Severity = input.Severity;
         if (request.SortOrder is { } sortOrder)
         {
             item.SortOrder = sortOrder;
         }
 
-        item.DataSourceHint = input.DataSourceHint;
-        item.Expectation = input.Expectation;
-        item.ToolName = input.ToolName;
-        item.ArgumentsTemplate = input.ArgumentsTemplate;
-        item.ValuePath = input.ValuePath;
-        item.Operator = input.Operator;
-        item.Threshold = input.Threshold;
-        item.Window = input.Window;
-        item.Severity = input.Severity;
-        item.RuleVersion = input.RuleVersion
-            ?? (assertionChanged ? item.RuleVersion + 1 : item.RuleVersion);
         item.UpdatedAt = DateTimeOffset.UtcNow;
 
         await db.SaveChangesAsync(cancellationToken);
@@ -507,50 +461,13 @@ public sealed partial class ManagementService
     private static ChecklistItemInput NormalizeItemInput(ChecklistItemInput raw)
     {
         var title = ManagementRules.RequiredText(raw.Title, "检查项名称", 300);
-        var toolName = ManagementRules.OptionalText(raw.ToolName, 200);
-        var argumentsTemplate = ManagementRules.OptionalJson(raw.ArgumentsTemplate, "参数模板", JsonValueKind.Object);
-        var valuePath = ManagementRules.OptionalText(raw.ValuePath, 200);
-        var threshold = ManagementRules.OptionalText(raw.Threshold, 200);
-        var window = ManagementRules.OptionalText(raw.Window, 50);
-
-        var hasAssertionField = toolName is not null
-            || raw.Operator is not null
-            || threshold is not null
-            || argumentsTemplate is not null
-            || valuePath is not null
-            || window is not null;
-
-        if (hasAssertionField && (toolName is null || raw.Operator is null || threshold is null))
-        {
-            throw new ManagementException("结构化断言需要同时填写工具名、比较符与阈值；全部留空表示信息型检查项。");
-        }
-
-        if (raw.Operator is { } op && !Enum.IsDefined(op))
-        {
-            throw new ManagementException("比较符无效。");
-        }
+        var body = ManagementRules.RequiredText(raw.Body, "检查项正文", 4000);
 
         if (raw.Severity is { } severity && !Enum.IsDefined(severity))
         {
             throw new ManagementException("严重级别无效。");
         }
 
-        if (raw.RuleVersion is <= 0)
-        {
-            throw new ManagementException("RuleVersion 必须是正整数。");
-        }
-
-        return new ChecklistItemInput(
-            title,
-            ManagementRules.OptionalText(raw.DataSourceHint, 1000),
-            ManagementRules.OptionalText(raw.Expectation, 2000),
-            toolName,
-            argumentsTemplate,
-            valuePath,
-            raw.Operator,
-            threshold,
-            window,
-            raw.Severity,
-            raw.RuleVersion);
+        return new ChecklistItemInput(title, body, raw.Severity);
     }
 }
