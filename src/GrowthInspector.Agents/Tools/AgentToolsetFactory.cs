@@ -11,7 +11,7 @@ using Microsoft.Extensions.Options;
 
 namespace GrowthInspector.Agents.Tools;
 
-/// <summary>创建 agent 工具集的输入：Project / Environment / 检查项与角色。</summary>
+/// <summary>创建 agent 工具集的输入：Project / Environment / 执行轮次与角色。</summary>
 public sealed record AgentToolsetRequest(
     Guid ProjectId,
     Guid EnvironmentId,
@@ -20,16 +20,13 @@ public sealed record AgentToolsetRequest(
     AgentRole AgentRole);
 
 /// <summary>
-/// 按角色组装工具集：
-/// 执行 = MCP 工具 + 手册检索 / 披露 / 列表 + 手册写；
-/// 反思 = 手册检索 / 披露 / 列表 + 手册写；
-/// 摘要 = 无工具。
-/// 三类角色都不暴露管理 CRUD。
+/// 按角色组装工具集：执行 = MCP 工具 + 手册检索 / 披露 / 列表（只读）；摘要 = 无工具。
+/// 工具手册只读，改写归人工。MCP 工具按 server 名与工具名排序注册，
+/// 保证工具声明顺序确定，provider 侧前缀缓存不被顺序抖动打散。
 /// </summary>
 public sealed class AgentToolsetFactory(
     IDbContextFactory<GrowthInspectorDbContext> dbContextFactory,
     IMcpToolInvoker mcpToolInvoker,
-    IRunbookWriteService? runbookWriteService,
     RunbookSearchService runbookSearchService,
     ToolCallAuditor toolCallAuditor,
     IOptions<InspectionOptions> options,
@@ -47,23 +44,22 @@ public sealed class AgentToolsetFactory(
         CancellationToken cancellationToken = default)
     {
         var registry = new AgentToolRegistry();
-        if (request.AgentRole is AgentRole.Execution or AgentRole.Reflection)
+        if (request.AgentRole == AgentRole.Execution)
         {
             RegisterRunbookTools(registry, request.ProjectId);
         }
 
-        var context = new AgentToolCallContext(
-            request.ProjectId,
-            request.EnvironmentId,
-            request.ChecklistRunId,
-            request.ChecklistItemId,
-            request.AgentRole);
-
         var toolset = new AgentToolset(
             registry,
             toolCallAuditor,
-            context,
+            new AgentToolCallContext(
+                request.ProjectId,
+                request.EnvironmentId,
+                request.ChecklistRunId,
+                request.ChecklistItemId,
+                request.AgentRole),
             mcpToolInvoker,
+            options,
             loggerFactory.CreateLogger<AgentToolset>());
 
         if (request.AgentRole == AgentRole.Execution)
@@ -112,7 +108,8 @@ public sealed class AgentToolsetFactory(
                 continue;
             }
 
-            foreach (var descriptor in descriptors)
+            // 注册顺序确定（server 名 → 工具名），工具声明作为请求前缀的一部分才能稳定命中缓存。
+            foreach (var descriptor in descriptors.OrderBy(descriptor => descriptor.Name, StringComparer.Ordinal))
             {
                 if (string.IsNullOrWhiteSpace(descriptor.Name))
                 {
@@ -152,9 +149,7 @@ public sealed class AgentToolsetFactory(
         var tools = new RunbookToolService(
             dbContextFactory,
             runbookSearchService,
-            options,
-            runbookWriteService,
-            loggerFactory.CreateLogger<RunbookToolService>());
+            options);
 
         registry.AddLocal(AIFunctionFactory.Create(
             (string query, CancellationToken cancellationToken) => tools.SearchAsync(projectId, query, cancellationToken),
@@ -173,13 +168,6 @@ public sealed class AgentToolsetFactory(
             (CancellationToken cancellationToken) => tools.ListAsync(projectId, cancellationToken),
             name: AgentToolNames.ListRunbooks,
             description: "列出当前 Project 未归档手册的 Id、ProjectId、Kind 与标题。",
-            serializerOptions: JsonOptions));
-
-        registry.AddLocal(AIFunctionFactory.Create(
-            (string runbookId, string? section, string content, CancellationToken cancellationToken) =>
-                tools.UpdateSectionAsync(projectId, runbookId, section, content, cancellationToken),
-            name: AgentToolNames.UpdateRunbookSection,
-            description: "改写（或追加）手册的指定章节；失败返回 {ok:false,error}，不抛异常。",
             serializerOptions: JsonOptions));
     }
 }

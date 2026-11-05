@@ -3,18 +3,15 @@ using GrowthInspector.Core.Models;
 namespace GrowthInspector.Core.Abstractions;
 
 /// <summary>
-/// 单个检查项的执行请求。执行上下文包含：该项目全部通用手册全文、被检查单引用的专用手册、
-/// 当前检查项的自然语言正文（标题 / 正文 / 严重级别）与 finding 历史；由执行 agent 消费。
+/// 一轮检查单执行的请求：整轮共享一个 agent 会话（系统提示 + 项目上下文 + 手册 + 检查单概览只付一次），
+/// 由执行器框架主导逐项推进。
 /// </summary>
-public sealed record ChecklistItemExecutionRequest(
+public sealed record ChecklistRunAgentRequest(
     Guid ChecklistRunId,
     Guid ProjectId,
     Guid EnvironmentId,
     string? ProjectOpsContext,
-    ChecklistSnapshotItem Item,
-    IReadOnlyList<RunbookSnapshot> GeneralRunbooks,
-    IReadOnlyList<RunbookSnapshot> ReferencedRunbooks,
-    IReadOnlyList<FindingSnapshot> FindingHistory);
+    ChecklistSnapshot Snapshot);
 
 /// <summary>
 /// 单个检查项的执行结果：agent 判定 + 证据与计量。
@@ -26,16 +23,22 @@ public sealed record ChecklistItemExecutionResult(
     long DurationMs = 0,
     int PromptTokens = 0,
     int CompletionTokens = 0,
+    int CachedPromptTokens = 0,
     string? ErrorMessage = null,
     VerdictStatus? AgentVerdict = null,
     string? Narrative = null,
     IReadOnlyList<string>? Observations = null,
     int ToolCallCount = 0);
 
-/// <summary>检查项执行器：由执行 agent（含 MCP 工具）实现；骨架阶段使用占位实现。</summary>
-public interface IChecklistItemExecutor
+/// <summary>
+/// 检查单执行 agent：一轮执行一个会话，按 SortOrder 逐项取证判定；
+/// 每项完成即通过 onItemCompleted 回调交回，由编排层立即落库。
+/// 单项失败（LLM 异常、claim 非法）只污染该项，会话继续推进后续检查项。
+/// </summary>
+public interface IChecklistRunAgentExecutor
 {
-    Task<ChecklistItemExecutionResult> ExecuteAsync(
-        ChecklistItemExecutionRequest request,
+    Task ExecuteAsync(
+        ChecklistRunAgentRequest request,
+        Func<Guid, ChecklistItemExecutionResult, Task> onItemCompleted,
         CancellationToken cancellationToken = default);
 }

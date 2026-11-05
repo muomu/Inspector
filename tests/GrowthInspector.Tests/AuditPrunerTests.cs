@@ -159,12 +159,13 @@ public sealed class AuditPrunerTests : IAsyncLifetime
             DurationMs = 12,
             CreatedAt = startedAt,
         });
-        run.Summary = new AiSummary
+        db.AiSummaries.Add(new AiSummary
         {
+            ChecklistRunId = run.Id,
             Kind = AiSummaryKind.RunSummary,
             Content = "历史摘要",
             CreatedAt = startedAt,
-        };
+        });
 
         db.Projects.Add(project);
         db.Environments.Add(environment);

@@ -64,8 +64,7 @@ public sealed class DailyReportTests
                     VerdictStatus.Ok,
                     "value=0.1",
                     Observations: ["连接池使用率 85%", "存在 3 条慢查询"]),
-            ],
-            summary: "本轮共 2 项，1 项未完成判定。");
+            ]);
         await harness.AddRunAsync(seed, seed.Prod.Id, [], status: RunStatus.Failed);
         await harness.AddRunAsync(seed, seed.Prod.Id, [], status: RunStatus.Skipped);
         await harness.AddRunAsync(seed, seed.Prod.Id, [], status: RunStatus.Canceled);
@@ -100,7 +99,9 @@ public sealed class DailyReportTests
         Assert.Contains("恢复：错误率恢复", report.Markdown);
         Assert.Contains("LLM 超时，未完成判定", report.Markdown);
         Assert.Contains("连接池使用率 85%", report.Markdown);
-        Assert.Contains("本轮共 2 项，1 项未完成判定。", report.Markdown);
+        // 摘要段由日报 agent 生成；测试宿主未注册 LLM，走规则模板兜底。
+        Assert.Contains("执行 4 轮", report.Markdown);
+        Assert.Contains("失败检查项 1 个", report.Markdown);
         Assert.Contains("跳过：", report.Markdown);
         Assert.Contains("取消：", report.Markdown);
 
@@ -124,8 +125,7 @@ public sealed class DailyReportTests
         await harness.AddRunAsync(
             seed,
             seed.Prod.Id,
-            [CheckResultSeed.Healthy(seed.Item.Id)],
-            summary: "本轮全部正常。");
+            [CheckResultSeed.Healthy(seed.Item.Id)]);
 
         using var scope = harness.Services.CreateScope();
         var builder = scope.ServiceProvider.GetRequiredService<IProjectDailyReportBuilder>();
@@ -141,9 +141,36 @@ public sealed class DailyReportTests
         Assert.Contains("## 新增异常", report.Markdown);
         Assert.Contains("## 恢复异常", report.Markdown);
         Assert.Contains("## 持续异常", report.Markdown);
-        Assert.Contains("本轮全部正常。", report.Markdown);
+        // 无 LLM 时模板兜底：陈述执行轮次事实，不编造结论。
+        Assert.Contains("执行 1 轮", report.Markdown);
+        Assert.Contains("新增异常 0", report.Markdown);
         Assert.DoesNotContain("判据变更", report.Markdown);
         Assert.DoesNotContain("规则版本", report.Markdown);
+    }
+
+    [Fact]
+    public async Task Digest_UsesDailyReportAgentOutput_WhenRegistered()
+    {
+        await using var harness = new NotificationTestHarness(configureServices: services =>
+            services.AddScoped<IDailyReportAgent>(_ => new FixedDailyReportAgent(
+                "今天整体平稳：一次执行全部通过，无新增异常。")));
+        var seed = await harness.SeedAsync(projectName: "agent 项目");
+        await harness.AddRunAsync(seed, seed.Prod.Id, [CheckResultSeed.Healthy(seed.Item.Id)]);
+
+        using var scope = harness.Services.CreateScope();
+        var builder = scope.ServiceProvider.GetRequiredService<IProjectDailyReportBuilder>();
+        var report = await builder.BuildAsync(seed.Project.Id, ReportDate);
+
+        Assert.Contains("## 当日 AI 摘要", report.Markdown);
+        Assert.Contains("今天整体平稳：一次执行全部通过，无新增异常。", report.Markdown);
+    }
+
+    private sealed class FixedDailyReportAgent(string content) : IDailyReportAgent
+    {
+        public Task<DailyReportAgentResult> SummarizeAsync(
+            DailyReportFacts facts,
+            CancellationToken cancellationToken = default)
+            => Task.FromResult(new DailyReportAgentResult(content, FallbackUsed: false, "fixed-model", 1, 1, 1));
     }
 
     [Fact]

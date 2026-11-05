@@ -2,30 +2,41 @@ using System.Diagnostics;
 using System.Text.Json;
 using GrowthInspector.Core.Abstractions;
 using GrowthInspector.Core.Models;
+using GrowthInspector.Core.Options;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 
 namespace GrowthInspector.Agents.Tools;
 
 /// <summary>
 /// 一次 agent 会话的工具集：持有当前角色可见的工具声明、调用计数与审计上下文。
 /// 本地工具经 AIFunctionFactory 包装后由这里统一调用；MCP 工具经 IMcpToolInvoker 透传。
+/// 会话内同工具同参数的调用直接复用上次成功结果（去重）；回传模型的文本按
+/// ToolResultModelMaxBytes 截断，审计落库仍按 ToolResultMaxBytes 截断。
 /// </summary>
 public sealed class AgentToolset(
     AgentToolRegistry registry,
     ToolCallAuditor auditor,
     AgentToolCallContext context,
     IMcpToolInvoker mcpToolInvoker,
+    IOptions<InspectionOptions> options,
     ILogger<AgentToolset> logger)
 {
+    private readonly Dictionary<string, string> resultCache = new(StringComparer.Ordinal);
+    private Guid? currentItemId;
+
     public AgentRole Role => context.AgentRole;
 
     public IReadOnlyList<AITool> Tools => registry.Tools;
 
     public AgentToolRegistry Registry => registry;
 
-    /// <summary>本次会话已经发起的工具调用次数（含失败）。</summary>
+    /// <summary>本次会话已经发起的工具调用次数（含失败与去重复用）。</summary>
     public int ToolCallCount { get; private set; }
+
+    /// <summary>整单会话推进到某个检查项时更新审计归因；null 表示轮级（非项级）调用。</summary>
+    public void SetCurrentItem(Guid? checklistItemId) => currentItemId = checklistItemId;
 
     public async Task<AgentToolInvocationResult> InvokeAsync(
         string toolName,
@@ -33,11 +44,21 @@ public sealed class AgentToolset(
         CancellationToken cancellationToken = default)
     {
         ToolCallCount++;
+        registry.TryGet(toolName, out var entry);
+
+        var cacheKey = toolName + "\u0000" + CanonicalizeArguments(argumentsJson);
+        if (resultCache.TryGetValue(cacheKey, out var cached))
+        {
+            // 同会话同工具同参数：复用上次成功结果，审计记一次零耗时命中。
+            var reuse = new AgentToolInvocationResult(true, cached);
+            await auditor.RecordAsync(AuditContext, toolName, entry?.McpServerId, entry?.ServerName, argumentsJson, reuse, 0, CancellationToken.None);
+            return reuse;
+        }
+
         var stopwatch = Stopwatch.StartNew();
 
-        AgentToolEntry? entry = null;
         AgentToolInvocationResult result;
-        if (!registry.TryGet(toolName, out entry))
+        if (entry is null)
         {
             var message = $"未知工具：{toolName}。";
             result = new AgentToolInvocationResult(false, ErrorJson(message), ErrorMessage: message);
@@ -53,16 +74,63 @@ public sealed class AgentToolset(
 
         stopwatch.Stop();
         await auditor.RecordAsync(
-            context,
+            AuditContext,
             toolName,
             entry?.McpServerId,
             entry?.ServerName,
             argumentsJson,
             result,
-            stopwatch.ElapsedMilliseconds);
+            stopwatch.ElapsedMilliseconds,
+            CancellationToken.None);
 
-        return result;
+        if (result.Succeeded)
+        {
+            resultCache[cacheKey] = TruncateForModel(result.Text);
+        }
+
+        // 模型只见截断后的文本；审计里保留按 ToolResultMaxBytes 的完整版本。
+        return result with { Text = TruncateForModel(result.Text) };
     }
+
+    private AgentToolCallContext AuditContext => currentItemId is { } itemId
+        ? context with { ChecklistItemId = itemId }
+        : context;
+
+    private string TruncateForModel(string text)
+    {
+        var maxBytes = Math.Max(512, options.Value.ToolResultModelMaxBytes);
+        return ToolCallAuditor.Truncate(text, maxBytes).Text ?? string.Empty;
+    }
+
+    /// <summary>去重键用的参数规范化：递归按属性名排序后重新序列化，忽略键序差异。</summary>
+    private static string CanonicalizeArguments(string argumentsJson)
+    {
+        if (string.IsNullOrWhiteSpace(argumentsJson))
+        {
+            return "{}";
+        }
+
+        try
+        {
+            using var document = JsonDocument.Parse(argumentsJson);
+            return CanonicalJson(document.RootElement);
+        }
+        catch (JsonException)
+        {
+            return argumentsJson;
+        }
+    }
+
+    private static string CanonicalJson(JsonElement element) => element.ValueKind switch
+    {
+        JsonValueKind.Object => "{"
+            + string.Join(",", element.EnumerateObject()
+                .OrderBy(property => property.Name, StringComparer.Ordinal)
+                .Select(property => JsonSerializer.Serialize(property.Name) + ":" + CanonicalJson(property.Value)))
+            + "}",
+        JsonValueKind.Array => "[" + string.Join(",", element.EnumerateArray().Select(CanonicalJson)) + "]",
+        _ => element.GetRawText(),
+    };
 
     private async Task<AgentToolInvocationResult> InvokeLocalAsync(
         AgentToolEntry entry,

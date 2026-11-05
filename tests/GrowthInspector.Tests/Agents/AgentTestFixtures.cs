@@ -157,7 +157,6 @@ public static class AgentTestData
     public static AgentToolsetFactory CreateToolsetFactory(
         TestSqliteDatabase database,
         IMcpToolInvoker? mcpToolInvoker = null,
-        IRunbookWriteService? runbookWriteService = null,
         InspectionOptions? options = null,
         bool enableFtsIndex = true)
     {
@@ -175,7 +174,6 @@ public static class AgentTestData
         return new AgentToolsetFactory(
             database.Factory,
             mcpToolInvoker ?? new FakeMcpToolInvoker(),
-            runbookWriteService,
             search,
             auditor,
             inspectionOptions,
@@ -217,31 +215,6 @@ public sealed class FakeMcpToolInvoker : IMcpToolInvoker
         string ToolName,
         string ArgumentsJson,
         McpToolInvocationContext? Context);
-}
-
-/// <summary>记录改写调用；可配置失败或异常。</summary>
-public sealed class FakeRunbookWriteService : IRunbookWriteService
-{
-    public List<WriteCall> Calls { get; } = [];
-
-    public Func<Guid, string?, string, RunbookSectionUpdateResult>? OnUpdate { get; set; }
-
-    public Task<RunbookSectionUpdateResult> UpdateSectionAsync(
-        Guid runbookId,
-        string? sectionHeading,
-        string newContent,
-        CancellationToken cancellationToken = default)
-    {
-        Calls.Add(new WriteCall(runbookId, sectionHeading, newContent));
-        if (OnUpdate is null)
-        {
-            return Task.FromResult(new RunbookSectionUpdateResult(true));
-        }
-
-        return Task.FromResult(OnUpdate(runbookId, sectionHeading, newContent));
-    }
-
-    public sealed record WriteCall(Guid RunbookId, string? Section, string Content);
 }
 
 /// <summary>按脚本返回 ChatResponse 的假模型；也可用 Handler 模拟超时或异常。</summary>

@@ -37,6 +37,9 @@ public sealed class CheckResult
 
     public int CompletionTokens { get; set; }
 
+    /// <summary>prompt tokens 中命中 provider 前缀缓存的部分（用于观测缓存命中率）。</summary>
+    public int CachedPromptTokens { get; set; }
+
     public string? ErrorMessage { get; set; }
 
     public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;

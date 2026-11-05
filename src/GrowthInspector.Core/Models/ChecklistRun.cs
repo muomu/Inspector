@@ -31,12 +31,13 @@ public sealed class ChecklistRun
 
     public int CompletionTokens { get; set; }
 
+    /// <summary>prompt tokens 中命中 provider 前缀缓存的部分（用于观测缓存命中率）。</summary>
+    public int CachedPromptTokens { get; set; }
+
     /// <summary>失败原因（骨架阶段用于标注未接入的链路）。</summary>
     public string? ErrorMessage { get; set; }
 
     public ICollection<CheckResult> Results { get; set; } = new List<CheckResult>();
 
     public ICollection<ToolCallLog> ToolCalls { get; set; } = new List<ToolCallLog>();
-
-    public AiSummary? Summary { get; set; }
 }

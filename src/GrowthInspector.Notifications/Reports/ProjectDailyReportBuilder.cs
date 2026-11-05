@@ -12,13 +12,15 @@ using Microsoft.Extensions.Options;
 namespace GrowthInspector.Notifications.Reports;
 
 /// <summary>
-/// 按 Project 生成日报 Markdown（TPG-2714）：只读取该 Project 当日的执行、finding、观察与 AI 摘要，
-/// 保证单 Project 发送的内容不串项目；日期边界按 InspectionOptions.TimeZone 计算。
+/// 按 Project 生成日报 Markdown：只读取该 Project 当日的执行与 finding，
+/// 保证单 Project 发送的内容不串项目；「当日 AI 摘要」段由日报 agent 依据当日执行记录生成
+/// （TPG-2714；不再依赖每轮执行摘要）。日期边界按 InspectionOptions.TimeZone 计算。
 /// </summary>
 public sealed class ProjectDailyReportBuilder(
     IDbContextFactory<GrowthInspectorDbContext> dbContextFactory,
     IOptions<InspectionOptions> inspectionOptions,
     IOptions<LarkNotificationOptions> larkOptions,
+    IDailyReportAgent dailyReportAgent,
     ILogger<ProjectDailyReportBuilder> logger) : IProjectDailyReportBuilder
 {
     private static readonly JsonSerializerOptions ObservationsJsonOptions = new(JsonSerializerDefaults.Web);
@@ -48,7 +50,6 @@ public sealed class ProjectDailyReportBuilder(
             .Include(x => x.Environment)
             .Include(x => x.Results)
                 .ThenInclude(x => x.ChecklistItem)
-            .Include(x => x.Summary)
             .OrderBy(x => x.StartedAt)
             .ToListAsync(cancellationToken);
 
@@ -115,14 +116,6 @@ public sealed class ProjectDailyReportBuilder(
                         Text: text))))
             .ToList();
 
-        var summaries = runs
-            .Where(run => run.Summary is { } summary && !string.IsNullOrWhiteSpace(summary.Content))
-            .Select(run => new SummaryEntry(
-                ChecklistName: run.Checklist?.Name ?? "（检查单已删除）",
-                EnvironmentName: run.Environment?.Name ?? "（环境已删除）",
-                Content: Truncate(run.Summary!.Content, larkOptions.Value.AiSummaryMaxChars)))
-            .ToList();
-
         var skippedRuns = runs.Where(x => x.Status == RunStatus.Skipped).ToList();
         var canceledRuns = runs.Where(x => x.Status == RunStatus.Canceled).ToList();
 
@@ -141,8 +134,7 @@ public sealed class ProjectDailyReportBuilder(
         var hasData = counters.Runs > 0
             || counters.NewFindings + counters.RecoveredFindings + counters.OngoingFindings > 0
             || counters.FailedItems > 0
-            || counters.Observations > 0
-            || summaries.Count > 0;
+            || counters.Observations > 0;
 
         var markdown = BuildMarkdown(
             project.Name,
@@ -154,12 +146,24 @@ public sealed class ProjectDailyReportBuilder(
             ongoingFindings,
             failedItems,
             observations,
-            summaries,
             skippedRuns,
             canceledRuns,
             checklistNames,
             itemTitles,
             environmentNames);
+
+        // 「当日 AI 摘要」由日报 agent 从当日执行记录事实生成，每天每 Project 只调一次。
+        var facts = new DailyReportFacts(
+            project.Name,
+            reportDate,
+            counters,
+            BuildFindingLines(newFindings, ongoingFindings, checklistNames, itemTitles, environmentNames, timeZone),
+            failedItems.Select(failed =>
+                $"{failed.ChecklistName} / {failed.ItemTitle} @ {failed.EnvironmentName}：{failed.ErrorMessage ?? "（无错误信息）"}").ToList(),
+            observations.Select(observation =>
+                $"{observation.ChecklistName} / {observation.ItemTitle} @ {observation.EnvironmentName}：{observation.Text}").ToList());
+        var digest = await dailyReportAgent.SummarizeAsync(facts, cancellationToken);
+        markdown += "\n\n## 当日 AI 摘要\n" + Truncate(digest.Content, larkOptions.Value.AiSummaryMaxChars);
 
         logger.LogDebug(
             "已生成 Project {ProjectId} 的 {ReportDate} 日报（有数据={HasData}，执行 {Runs} 轮）。",
@@ -188,7 +192,6 @@ public sealed class ProjectDailyReportBuilder(
         IReadOnlyList<Finding> ongoingFindings,
         IReadOnlyList<FailedItemEntry> failedItems,
         IReadOnlyList<ObservationEntry> observations,
-        IReadOnlyList<SummaryEntry> summaries,
         IReadOnlyList<ChecklistRun> skippedRuns,
         IReadOnlyList<ChecklistRun> canceledRuns,
         IReadOnlyDictionary<Guid, string> checklistNames,
@@ -274,21 +277,23 @@ public sealed class ProjectDailyReportBuilder(
 
         builder.AppendLine();
 
-        builder.AppendLine("## 当日 AI 摘要");
-        if (summaries.Count == 0)
-        {
-            builder.AppendLine("（无）");
-        }
-        else
-        {
-            foreach (var summary in summaries)
-            {
-                builder.AppendLine($"- {summary.ChecklistName} @ {summary.EnvironmentName}：{summary.Content}");
-            }
-        }
-
         return builder.ToString().TrimEnd();
     }
+
+    /// <summary>日报 agent 输入用的异常行（新增 + 持续），与正文展示同一信息口径。</summary>
+    private static List<string> BuildFindingLines(
+        IReadOnlyList<Finding> newFindings,
+        IReadOnlyList<Finding> ongoingFindings,
+        IReadOnlyDictionary<Guid, string> checklistNames,
+        IReadOnlyDictionary<Guid, string> itemTitles,
+        IReadOnlyDictionary<Guid, string> environmentNames,
+        TimeZoneInfo timeZone)
+        => [.. newFindings.Concat(ongoingFindings).Select(finding =>
+            $"[{finding.Severity}] {finding.Title}（{checklistNames.GetValueOrDefault(finding.ChecklistId, "（检查单已删除）")}"
+            + $" / {itemTitles.GetValueOrDefault(finding.ChecklistItemId, finding.Title)}"
+            + $" @ {environmentNames.GetValueOrDefault(finding.EnvironmentId, "（环境已删除）")}"
+            + $"，首次 {InspectionTimeZone.Format(finding.FirstSeenAt, timeZone)}"
+            + $"，最近 {InspectionTimeZone.Format(finding.LastSeenAt, timeZone)}）")];
 
     private static void AppendFindings(
         StringBuilder builder,
@@ -364,9 +369,4 @@ public sealed class ProjectDailyReportBuilder(
         string EnvironmentName,
         string ItemTitle,
         string Text);
-
-    private sealed record SummaryEntry(
-        string ChecklistName,
-        string EnvironmentName,
-        string Content);
 }

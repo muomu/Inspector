@@ -233,12 +233,12 @@ internal sealed class NotificationTestHarness : IAsyncDisposable
 
         if (!string.IsNullOrWhiteSpace(summary))
         {
-            run.Summary = new AiSummary
+            db.AiSummaries.Add(new AiSummary
             {
                 ChecklistRunId = run.Id,
                 Kind = AiSummaryKind.RunSummary,
                 Content = summary,
-            };
+            });
         }
 
         db.ChecklistRuns.Add(run);

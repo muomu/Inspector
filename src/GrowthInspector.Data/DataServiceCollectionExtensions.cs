@@ -58,5 +58,59 @@ public static class DataServiceCollectionExtensions
         var factory = scope.ServiceProvider.GetRequiredService<IDbContextFactory<GrowthInspectorDbContext>>();
         await using var db = await factory.CreateDbContextAsync(cancellationToken);
         await db.Database.EnsureCreatedAsync(cancellationToken);
+        await PatchMissingColumnsAsync(db, cancellationToken);
+    }
+
+    /// <summary>
+    /// EnsureCreated 不迁移存量库：为版本升级新增的列做补列（只加不改）。
+    /// 失败不阻断启动；列缺失时首次读写会暴露具体问题。
+    /// </summary>
+    private static async Task PatchMissingColumnsAsync(GrowthInspectorDbContext db, CancellationToken cancellationToken)
+    {
+        (string Table, string Column, string Definition)[] patches =
+        [
+            ("ChecklistRuns", "CachedPromptTokens", "INTEGER NOT NULL DEFAULT 0"),
+            ("CheckResults", "CachedPromptTokens", "INTEGER NOT NULL DEFAULT 0"),
+        ];
+
+        try
+        {
+            var connection = db.Database.GetDbConnection();
+            if (connection.State != System.Data.ConnectionState.Open)
+            {
+                await connection.OpenAsync(cancellationToken);
+            }
+
+            foreach (var (table, column, definition) in patches)
+            {
+                var exists = false;
+                var checkCommand = connection.CreateCommand();
+                checkCommand.CommandText = $"PRAGMA table_info({table});";
+                using (var reader = await checkCommand.ExecuteReaderAsync(cancellationToken))
+                {
+                    while (await reader.ReadAsync(cancellationToken))
+                    {
+                        if (string.Equals(reader.GetString(1), column, StringComparison.OrdinalIgnoreCase))
+                        {
+                            exists = true;
+                            break;
+                        }
+                    }
+                }
+
+                if (exists)
+                {
+                    continue;
+                }
+
+                var alterCommand = connection.CreateCommand();
+                alterCommand.CommandText = $"ALTER TABLE {table} ADD COLUMN \"{column}\" {definition};";
+                await alterCommand.ExecuteNonQueryAsync(cancellationToken);
+            }
+        }
+        catch (Exception)
+        {
+            // 尽力而为：补列失败不阻止应用启动。
+        }
     }
 }

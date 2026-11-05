@@ -1,7 +1,6 @@
 using GrowthInspector.Agents.Chat;
 using GrowthInspector.Agents.Execution;
 using GrowthInspector.Agents.Mcp;
-using GrowthInspector.Agents.Reflection;
 using GrowthInspector.Agents.Tools;
 using GrowthInspector.Core.Abstractions;
 using GrowthInspector.Core.Options;
@@ -18,8 +17,8 @@ public static class AgentsServiceCollectionExtensions
 {
     /// <summary>
     /// 注册 agent 层依赖：DeepSeek 执行 / 摘要客户端（无 key 时降级为不可用实现）、
-    /// MCP 工具调用入口、工具基座（本地手册工具 + MCP 透传 + 审计）、
-    /// 检查项执行 agent（取证 + 判定）与反思 agent。
+    /// MCP 工具调用入口、工具基座（本地只读手册工具 + MCP 透传 + 审计 + 同参去重 + 回传截断）
+    /// 与检查单执行 agent（整轮一个会话、框架主导逐项推进）。
     /// </summary>
     public static IServiceCollection AddGrowthInspectorAgents(
         this IServiceCollection services,
@@ -45,11 +44,11 @@ public static class AgentsServiceCollectionExtensions
                 DeepSeekChatClientFactory.CreateClient(deepSeekOptions, apiKey, DeepSeekClientRole.Summary)));
         }
 
-        // 单客户端注入点（执行角色）保持骨架阶段的兼容；需要摘要模型时注入 DeepSeekChatClients。
+        // 单客户端注入点（执行角色）；需要摘要模型时注入 DeepSeekChatClients。
         services.AddSingleton<IChatClient>(provider =>
             provider.GetRequiredService<DeepSeekChatClients>().Execution);
 
-        // MCP 数据源接入：连接工厂 + 工具调用入口（工具审计由调用方经 McpToolInvocationContext 驱动）。
+        // MCP 数据源接入：连接工厂 + 工具调用入口（工具审计由工具基座统一驱动）。
         services.AddSingleton<IMcpServerConnectionFactory>(provider =>
             new McpServerConnectionFactory(
                 provider.GetRequiredService<Microsoft.Extensions.Logging.ILoggerFactory>()));
@@ -64,15 +63,13 @@ public static class AgentsServiceCollectionExtensions
         services.AddScoped(sp => new AgentToolsetFactory(
             sp.GetRequiredService<IDbContextFactory<GrowthInspectorDbContext>>(),
             sp.GetRequiredService<IMcpToolInvoker>(),
-            sp.GetService<IRunbookWriteService>(),
             sp.GetRequiredService<RunbookSearchService>(),
             sp.GetRequiredService<ToolCallAuditor>(),
             sp.GetRequiredService<IOptions<InspectionOptions>>(),
             sp.GetRequiredService<ILoggerFactory>()));
 
-        // 执行 agent（整单会话 + 取证 + 结构化 claim + 判定）与反思 agent（手册改写）。
-        services.AddScoped<IChecklistItemExecutor, ChecklistItemAgentExecutor>();
-        services.AddScoped<IReflectionAgent, ReflectionAgent>();
+        // 执行 agent：整单会话 + 逐项取证 + 结构化 claim。
+        services.AddScoped<IChecklistRunAgentExecutor, ChecklistRunAgentExecutor>();
 
         return services;
     }

@@ -1,10 +1,13 @@
+using GrowthInspector.Agents.Chat;
 using GrowthInspector.Core.Abstractions;
 using GrowthInspector.Core.Options;
 using GrowthInspector.Notifications.Findings;
 using GrowthInspector.Notifications.Lark;
 using GrowthInspector.Notifications.Reports;
+using Microsoft.Extensions.AI;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Logging;
 
 namespace GrowthInspector.Notifications;
 
@@ -24,6 +27,11 @@ public static class NotificationsServiceCollectionExtensions
 
         // finding 状态机（TPG-2713）：调用方在一轮执行结束后触发 EvaluateRunAsync。
         services.AddScoped<IFindingNotifier, FindingNotifier>();
+
+        // 日报 agent：每天每 Project 一次，从当日执行记录生成摘要；优先摘要模型，未配置时模板兜底。
+        services.AddScoped<IDailyReportAgent>(sp => new DailyReportAgent(
+            sp.GetService<DeepSeekChatClients>()?.Summary ?? sp.GetService<IChatClient>(),
+            sp.GetRequiredService<ILogger<DailyReportAgent>>()));
 
         // 每日 10:00 日报（TPG-2714）：按 Project 生成内容并逐 Project 发送（v1 mock）。
         services.AddScoped<IProjectDailyReportBuilder, ProjectDailyReportBuilder>();

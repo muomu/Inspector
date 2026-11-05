@@ -238,11 +238,11 @@ public sealed class GrowthInspectorDbContext(DbContextOptions<GrowthInspectorDbC
             entity.HasKey(x => x.Id);
             entity.Property(x => x.Kind).HasConversion<string>().HasMaxLength(20);
             entity.Property(x => x.Content).IsRequired();
-            entity.HasIndex(x => x.ChecklistRunId).IsUnique();
+            entity.HasIndex(x => x.ChecklistRunId);
             entity.HasIndex(x => x.ReportDate);
             entity.HasOne(x => x.ChecklistRun)
-                .WithOne(x => x.Summary)
-                .HasForeignKey<AiSummary>(x => x.ChecklistRunId)
+                .WithMany()
+                .HasForeignKey(x => x.ChecklistRunId)
                 .OnDelete(DeleteBehavior.Cascade);
         });
     }

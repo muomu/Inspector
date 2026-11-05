@@ -26,5 +26,4 @@ public static class AgentToolNames
     public const string SearchRunbooks = LocalPrefix + "search_runbooks";
     public const string ReadRunbook = LocalPrefix + "read_runbook";
     public const string ListRunbooks = LocalPrefix + "list_runbooks";
-    public const string UpdateRunbookSection = LocalPrefix + "update_runbook_section";
 }

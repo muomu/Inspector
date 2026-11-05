@@ -35,7 +35,8 @@ public sealed class AgentToolBaseTests : IDisposable
         Assert.Contains("local__search_runbooks", names);
         Assert.Contains("local__read_runbook", names);
         Assert.Contains("local__list_runbooks", names);
-        Assert.Contains("local__update_runbook_section", names);
+        // 手册对 agent 只读：改写工具已随反思 agent 一并移除。
+        Assert.DoesNotContain("local__update_runbook_section", names);
         Assert.Contains("mock__QueryMetric", names);
         Assert.Contains("mock__logs_query", names);
 
@@ -205,99 +206,69 @@ public sealed class AgentToolBaseTests : IDisposable
     }
 
     [Fact]
-    public async Task UpdateRunbookSection_ReturnsErrorsWithoutThrowing()
+    public async Task Invoke_ReusesCachedResult_ForSameToolAndEquivalentArguments()
     {
         var seed = await AgentTestData.SeedAsync(database);
-        var runbook = await AgentTestData.AddRunbookAsync(database, seed.Project.Id, "手册", "# 手册\n\n正文。");
-        var writes = new FakeRunbookWriteService();
-        var factory = AgentTestData.CreateToolsetFactory(database, runbookWriteService: writes);
+        var server = await AgentTestData.AddMcpServerAsync(database, seed.Project.Id, "mock");
+        var invoker = new FakeMcpToolInvoker();
+        invoker.ToolLists[server.Id] =
+        [
+            new McpToolDescriptor("QueryMetric", "查询指标", null),
+        ];
+        invoker.OnCall = (_, _, argumentsJson, _) => new McpToolCallResult(
+            true,
+            $$"""{"value":1,"args":{{JsonSerializer.Serialize(argumentsJson)}}}""",
+            false,
+            2);
+
+        var factory = AgentTestData.CreateToolsetFactory(database, invoker);
         var toolset = await factory.CreateAsync(
-            new AgentToolsetRequest(seed.Project.Id, seed.Environment.Id, seed.Run.Id, seed.Item.Id, AgentRole.Reflection));
+            new AgentToolsetRequest(seed.Project.Id, seed.Environment.Id, seed.Run.Id, seed.Item.Id, AgentRole.Execution));
 
-        var success = await toolset.InvokeAsync(
-            AgentToolNames.UpdateRunbookSection,
-            JsonSerializer.Serialize(new
-            {
-                runbookId = runbook.Id.ToString(),
-                section = "排查步骤",
-                content = "1. 看连接数",
-            }));
-        using (var document = JsonDocument.Parse(success.Text))
-        {
-            Assert.True(document.RootElement.GetProperty("ok").GetBoolean());
-        }
+        var first = await toolset.InvokeAsync("mock__QueryMetric", """{"metric":"p99","range":"1h"}""");
+        // 参数键序不同但内容等价：同样命中缓存，不再发起真实调用。
+        var second = await toolset.InvokeAsync("mock__QueryMetric", """{"range":"1h","metric":"p99"}""");
+        var third = await toolset.InvokeAsync("mock__QueryMetric", """{"metric":"p95","range":"1h"}""");
 
-        var call = Assert.Single(writes.Calls);
-        Assert.Equal(runbook.Id, call.RunbookId);
-        Assert.Equal("排查步骤", call.Section);
-        Assert.Equal("1. 看连接数", call.Content);
+        Assert.Equal(2, invoker.Calls.Count);
+        Assert.Equal(first.Text, second.Text);
+        Assert.NotEqual(first.Text, third.Text);
+        Assert.Equal(3, toolset.ToolCallCount);
 
-        writes.OnUpdate = (_, _, _) => new RunbookSectionUpdateResult(false, "章节名称重复。");
-        var failed = await toolset.InvokeAsync(
-            AgentToolNames.UpdateRunbookSection,
-            JsonSerializer.Serialize(new { runbookId = runbook.Id.ToString(), section = "排查步骤", content = "x" }));
-        using (var document = JsonDocument.Parse(failed.Text))
-        {
-            Assert.False(document.RootElement.GetProperty("ok").GetBoolean());
-            Assert.Equal("章节名称重复。", document.RootElement.GetProperty("error").GetString());
-        }
+        await using var db = await database.Factory.CreateDbContextAsync();
+        var logs = await db.ToolCallLogs.Where(x => x.ToolName == "mock__QueryMetric").ToListAsync();
+        // 三次调用全部留痕（含一次零耗时复用），但真实 MCP 调用只有两次。
+        Assert.Equal(3, logs.Count);
+        Assert.All(logs, log => Assert.True(log.Succeeded));
+    }
 
-        writes.OnUpdate = (_, _, _) => throw new InvalidOperationException("写库异常");
-        var thrown = await toolset.InvokeAsync(
-            AgentToolNames.UpdateRunbookSection,
-            JsonSerializer.Serialize(new { runbookId = runbook.Id.ToString(), section = "排查步骤", content = "x" }));
-        using (var document = JsonDocument.Parse(thrown.Text))
-        {
-            Assert.False(document.RootElement.GetProperty("ok").GetBoolean());
-            Assert.Contains("写库异常", document.RootElement.GetProperty("error").GetString());
-        }
+    [Fact]
+    public async Task Invoke_TruncatesModelBoundText_ButKeepsAuditWithinToolResultMaxBytes()
+    {
+        var seed = await AgentTestData.SeedAsync(database);
+        var server = await AgentTestData.AddMcpServerAsync(database, seed.Project.Id, "mock");
+        var invoker = new FakeMcpToolInvoker();
+        invoker.ToolLists[server.Id] =
+        [
+            new McpToolDescriptor("QueryMetric", "查询指标", null),
+        ];
+        invoker.OnCall = (_, _, _, _) => new McpToolCallResult(
+            true,
+            JsonSerializer.Serialize(new { value = 123, note = new string('长', 400) }),
+            false,
+            2);
 
-        var invalidId = await toolset.InvokeAsync(
-            AgentToolNames.UpdateRunbookSection,
-            JsonSerializer.Serialize(new { runbookId = "not-a-guid", section = "x", content = "y" }));
-        using (var document = JsonDocument.Parse(invalidId.Text))
-        {
-            Assert.False(document.RootElement.GetProperty("ok").GetBoolean());
-        }
+        var options = new InspectionOptions { ToolResultModelMaxBytes = 600, ToolResultMaxBytes = 8192 };
+        var factory = AgentTestData.CreateToolsetFactory(database, invoker, options: options);
+        var toolset = await factory.CreateAsync(
+            new AgentToolsetRequest(seed.Project.Id, seed.Environment.Id, seed.Run.Id, seed.Item.Id, AgentRole.Execution));
 
-        Guid otherProjectId;
-        await using (var db = await database.Factory.CreateDbContextAsync())
-        {
-            var otherProject = new Project { Name = "别的项目", Code = "other-" + Guid.NewGuid().ToString("N")[..8] };
-            db.Projects.Add(otherProject);
-            await db.SaveChangesAsync();
-            otherProjectId = otherProject.Id;
-        }
+        var result = await toolset.InvokeAsync("mock__QueryMetric", """{"metric":"p99"}""");
+        Assert.True(System.Text.Encoding.UTF8.GetByteCount(result.Text) <= 604, $"模型侧应截断，实际 {System.Text.Encoding.UTF8.GetByteCount(result.Text)} 字节");
 
-        var otherProjectRunbook = await AgentTestData.AddRunbookAsync(
-            database,
-            otherProjectId,
-            "别人的手册",
-            "# 别人的手册\n\n正文。");
-        var crossProject = await toolset.InvokeAsync(
-            AgentToolNames.UpdateRunbookSection,
-            JsonSerializer.Serialize(new
-            {
-                runbookId = otherProjectRunbook.Id.ToString(),
-                section = "x",
-                content = "y",
-            }));
-        using (var document = JsonDocument.Parse(crossProject.Text))
-        {
-            Assert.False(document.RootElement.GetProperty("ok").GetBoolean());
-        }
-
-        var noWriteServiceFactory = AgentTestData.CreateToolsetFactory(database);
-        var noWriteServiceToolset = await noWriteServiceFactory.CreateAsync(
-            new AgentToolsetRequest(seed.Project.Id, seed.Environment.Id, seed.Run.Id, seed.Item.Id, AgentRole.Reflection));
-        var unavailable = await noWriteServiceToolset.InvokeAsync(
-            AgentToolNames.UpdateRunbookSection,
-            JsonSerializer.Serialize(new { runbookId = runbook.Id.ToString(), section = "x", content = "y" }));
-        using (var document = JsonDocument.Parse(unavailable.Text))
-        {
-            Assert.False(document.RootElement.GetProperty("ok").GetBoolean());
-            Assert.Contains("未注册", document.RootElement.GetProperty("error").GetString());
-        }
+        await using var db = await database.Factory.CreateDbContextAsync();
+        var log = Assert.Single(await db.ToolCallLogs.ToListAsync());
+        Assert.True(System.Text.Encoding.UTF8.GetByteCount(log.Result!) > 604, "审计侧应保留更长原文");
     }
 
     [Fact]
@@ -367,10 +338,10 @@ public sealed class AgentToolBaseTests : IDisposable
         var summary = await factory.CreateAsync(
             new AgentToolsetRequest(seed.Project.Id, seed.Environment.Id, seed.Run.Id, seed.Item.Id, AgentRole.Summary));
 
+        // 反思 agent 已移除：非执行角色不再装配任何工具。
         Assert.Empty(summary.Tools);
+        Assert.Empty(reflection.Tools);
         Assert.Contains(execution.Tools, tool => tool.Name == "mock__QueryMetric");
-        Assert.DoesNotContain(reflection.Tools, tool => tool.Name == "mock__QueryMetric");
-        Assert.Contains(reflection.Tools, tool => tool.Name == AgentToolNames.UpdateRunbookSection);
         Assert.DoesNotContain(execution.Tools, tool => tool.Name.Contains("create_runbook", StringComparison.Ordinal));
         Assert.DoesNotContain(execution.Tools, tool => tool.Name.Contains("delete", StringComparison.Ordinal));
     }

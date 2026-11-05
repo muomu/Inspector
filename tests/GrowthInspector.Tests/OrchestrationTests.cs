@@ -2,14 +2,16 @@ using GrowthInspector.Core.Abstractions;
 using GrowthInspector.Core.Models;
 using GrowthInspector.Data;
 using GrowthInspector.Orchestration;
-using GrowthInspector.Orchestration.Summaries;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Environment = GrowthInspector.Core.Models.Environment;
 
 namespace GrowthInspector.Tests;
 
-/// <summary>TPG-2707：检查单内串行、检查单间并行、单项错误/超时继续、摘要与 finding 旁路。</summary>
+/// <summary>
+/// TPG-2707：检查单内串行、检查单间并行、单项错误继续（由执行 agent 隔离）、
+/// 会话级失败整轮 Failed、finding 旁路与互斥。
+/// </summary>
 public sealed class OrchestrationTests
 {
     [Fact]
@@ -19,19 +21,19 @@ public sealed class OrchestrationTests
         var visibleResultCounts = new List<int>();
         InspectorTestHost? host = null;
 
-        var executor = new DelegatingItemExecutor(async (request, cancellationToken) =>
+        var executor = new DelegatingRunAgentExecutor(async (runId, item, cancellationToken) =>
         {
-            invocations.Add(request.Item.Title);
+            invocations.Add(item.Title);
             await using var db = await host!.DbFactory.CreateDbContextAsync(cancellationToken);
             visibleResultCounts.Add(await db.CheckResults.CountAsync(
-                x => x.ChecklistRunId == request.ChecklistRunId,
+                x => x.ChecklistRunId == runId,
                 cancellationToken));
 
-            return OkResult(request.Item.Title);
+            return OkResult(item.Title);
         });
 
         host = await InspectorTestHost.CreateAsync(
-            afterBuilder: services => services.AddSingleton<IChecklistItemExecutor>(executor));
+            afterBuilder: services => services.AddSingleton<IChecklistRunAgentExecutor>(executor));
 
         await using var _ = host;
         var seeded = await SeedChecklistAsync(
@@ -60,37 +62,35 @@ public sealed class OrchestrationTests
         Assert.NotNull(run.CompletedAt);
         Assert.True(run.PromptTokens > 0);
         Assert.True(run.CompletionTokens > 0);
+        Assert.Equal(run.Results.Sum(result => result.CachedPromptTokens), run.CachedPromptTokens);
     }
 
     [Fact]
-    public async Task RunAsync_WhenItemThrows_MarksErrorAndContinuesRemainingItems()
+    public async Task RunAsync_WhenItemFails_MarksErrorAndContinuesRemainingItems()
     {
         var invocations = new List<string>();
-        var executor = new DelegatingItemExecutor((request, _) =>
+        var executor = new DelegatingRunAgentExecutor((_, item, _) =>
         {
-            invocations.Add(request.Item.Title);
-            if (request.Item.Title == "会抛错")
-            {
-                throw new InvalidOperationException("工具调用炸了");
-            }
-
-            return Task.FromResult(OkResult(request.Item.Title));
+            invocations.Add(item.Title);
+            return Task.FromResult(item.Title == "会失败"
+                ? ErrorResult("LLM 调用失败：工具调用炸了")
+                : OkResult(item.Title));
         });
 
         await using var host = await InspectorTestHost.CreateAsync(
-            afterBuilder: services => services.AddSingleton<IChecklistItemExecutor>(executor));
+            afterBuilder: services => services.AddSingleton<IChecklistRunAgentExecutor>(executor));
 
         var seeded = await SeedChecklistAsync(
             host,
-            "exception",
+            "item-fault",
             ("正常一", 0),
-            ("会抛错", 1),
+            ("会失败", 1),
             ("正常二", 2));
 
         var orchestrator = host.Services.GetRequiredService<IInspectionOrchestrator>();
         var runId = await orchestrator.RunAsync(seeded.Checklist.Id, seeded.Environment.Id);
 
-        Assert.Equal(["正常一", "会抛错", "正常二"], invocations);
+        Assert.Equal(["正常一", "会失败", "正常二"], invocations);
 
         await using var db = await host.DbFactory.CreateDbContextAsync();
         var run = await db.ChecklistRuns.Include(x => x.Results).SingleAsync(x => x.Id == runId);
@@ -103,6 +103,26 @@ public sealed class OrchestrationTests
     }
 
     [Fact]
+    public async Task RunAsync_WhenAgentSessionThrows_MarksRunFailed()
+    {
+        var executor = new DelegatingRunAgentExecutor((_, _, _) =>
+            throw new InvalidOperationException("会话建立失败"));
+
+        await using var host = await InspectorTestHost.CreateAsync(
+            afterBuilder: services => services.AddSingleton<IChecklistRunAgentExecutor>(executor));
+
+        var seeded = await SeedChecklistAsync(host, "session-fault", ("检查项一", 0), ("检查项二", 1));
+
+        var orchestrator = host.Services.GetRequiredService<IInspectionOrchestrator>();
+        var runId = await orchestrator.RunAsync(seeded.Checklist.Id, seeded.Environment.Id);
+
+        await using var db = await host.DbFactory.CreateDbContextAsync();
+        var run = await db.ChecklistRuns.SingleAsync(x => x.Id == runId);
+        Assert.Equal(RunStatus.Failed, run.Status);
+        Assert.Contains("会话建立失败", run.ErrorMessage);
+    }
+
+    [Fact]
     public async Task RunAsync_TwoChecklistsExecuteConcurrently()
     {
         var bothStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -110,7 +130,7 @@ public sealed class OrchestrationTests
         var active = 0;
         var maxActive = 0;
 
-        var executor = new DelegatingItemExecutor(async (request, cancellationToken) =>
+        var executor = new DelegatingRunAgentExecutor(async (_, _, cancellationToken) =>
         {
             var current = Interlocked.Increment(ref active);
             InterlockedMax(ref maxActive, current);
@@ -123,11 +143,11 @@ public sealed class OrchestrationTests
             await bothStarted.Task.WaitAsync(TimeSpan.FromSeconds(10), cancellationToken);
             Interlocked.Decrement(ref active);
 
-            return OkResult(request.Item.Title);
+            return OkResult("并行");
         });
 
         await using var host = await InspectorTestHost.CreateAsync(
-            afterBuilder: services => services.AddSingleton<IChecklistItemExecutor>(executor));
+            afterBuilder: services => services.AddSingleton<IChecklistRunAgentExecutor>(executor));
 
         var first = await SeedChecklistAsync(host, "parallel-a", ("A1", 0), ("A2", 1));
         var second = await SeedChecklistAsync(host, "parallel-b", ("B1", 0), ("B2", 1));
@@ -154,19 +174,17 @@ public sealed class OrchestrationTests
     }
 
     [Fact]
-    public async Task RunAsync_CallsSummaryBeforeFindingNotifier()
+    public async Task RunAsync_CallsFindingNotifierAfterRun()
     {
         var calls = new List<string>();
-        var summary = new RecordingSummaryService(calls);
         var notifier = new RecordingFindingNotifier(calls);
-        var executor = new DelegatingItemExecutor((request, _) =>
-            Task.FromResult(OkResult(request.Item.Title)));
+        var executor = new DelegatingRunAgentExecutor((_, item, _) =>
+            Task.FromResult(OkResult(item.Title)));
 
         await using var host = await InspectorTestHost.CreateAsync(
             afterBuilder: services =>
             {
-                services.AddSingleton<IChecklistItemExecutor>(executor);
-                services.AddSingleton<IRunSummaryService>(summary);
+                services.AddSingleton<IChecklistRunAgentExecutor>(executor);
                 services.AddSingleton<IFindingNotifier>(notifier);
             });
 
@@ -175,32 +193,26 @@ public sealed class OrchestrationTests
         var orchestrator = host.Services.GetRequiredService<IInspectionOrchestrator>();
         var runId = await orchestrator.RunAsync(seeded.Checklist.Id, seeded.Environment.Id);
 
-        Assert.Equal([$"summary:{runId}", $"finding:{runId}"], calls);
+        Assert.Equal([$"finding:{runId}"], calls);
     }
 
     [Fact]
-    public async Task RunAsync_WhenSummaryThrows_FindingNotifierStillRunsAndRunSucceeds()
+    public async Task RunAsync_WhenFindingNotifierThrows_RunStillSucceeds()
     {
-        var calls = new List<string>();
-        var summary = new ThrowingSummaryService();
-        var notifier = new RecordingFindingNotifier(calls);
-        var executor = new DelegatingItemExecutor((request, _) =>
-            Task.FromResult(OkResult(request.Item.Title)));
+        var executor = new DelegatingRunAgentExecutor((_, item, _) =>
+            Task.FromResult(OkResult(item.Title)));
 
         await using var host = await InspectorTestHost.CreateAsync(
             afterBuilder: services =>
             {
-                services.AddSingleton<IChecklistItemExecutor>(executor);
-                services.AddSingleton<IRunSummaryService>(summary);
-                services.AddSingleton<IFindingNotifier>(notifier);
+                services.AddSingleton<IChecklistRunAgentExecutor>(executor);
+                services.AddSingleton<IFindingNotifier>(new ThrowingFindingNotifier());
             });
 
-        var seeded = await SeedChecklistAsync(host, "summary-fault", ("检查项", 0));
+        var seeded = await SeedChecklistAsync(host, "finding-fault", ("检查项", 0));
 
         var orchestrator = host.Services.GetRequiredService<IInspectionOrchestrator>();
         var runId = await orchestrator.RunAsync(seeded.Checklist.Id, seeded.Environment.Id);
-
-        Assert.Equal([$"finding:{runId}"], calls);
 
         await using var db = await host.DbFactory.CreateDbContextAsync();
         var run = await db.ChecklistRuns.SingleAsync(x => x.Id == runId);
@@ -211,14 +223,14 @@ public sealed class OrchestrationTests
     public async Task RunAsync_WhenAnotherRunIsActive_WritesSkippedRunAndDoesNotExecute()
     {
         var executed = false;
-        var executor = new DelegatingItemExecutor((request, _) =>
+        var executor = new DelegatingRunAgentExecutor((_, item, _) =>
         {
             executed = true;
-            return Task.FromResult(OkResult(request.Item.Title));
+            return Task.FromResult(OkResult(item.Title));
         });
 
         await using var host = await InspectorTestHost.CreateAsync(
-            afterBuilder: services => services.AddSingleton<IChecklistItemExecutor>(executor));
+            afterBuilder: services => services.AddSingleton<IChecklistRunAgentExecutor>(executor));
 
         var seeded = await SeedChecklistAsync(host, "busy", ("检查项", 0));
 
@@ -295,9 +307,16 @@ public sealed class OrchestrationTests
             DurationMs: 5,
             PromptTokens: 10,
             CompletionTokens: 3,
+            CachedPromptTokens: 4,
             AgentVerdict: VerdictStatus.Ok,
             Narrative: $"narrative:{title}",
             Observations: [$"observation:{title}"]);
+
+    private static ChecklistItemExecutionResult ErrorResult(string reason)
+        => new(
+            Status: CheckResultStatus.Error,
+            ErrorMessage: $"未完成 LLM 判定：{reason}",
+            Narrative: $"未完成 LLM 判定：{reason}");
 
     private static void InterlockedMax(ref int target, int value)
     {
@@ -350,29 +369,32 @@ public sealed class OrchestrationTests
 
     private sealed record SeededChecklist(Project Project, Environment Environment, Checklist Checklist);
 
-    private sealed class DelegatingItemExecutor(
-        Func<ChecklistItemExecutionRequest, CancellationToken, Task<ChecklistItemExecutionResult>> handler)
-        : IChecklistItemExecutor
+    /// <summary>
+    /// 测试用执行 agent：按 SortOrder 逐项调 handler 并回调结果，
+    /// 模拟真实 ChecklistRunAgentExecutor 的框架主导逐项推进。
+    /// </summary>
+    private sealed class DelegatingRunAgentExecutor(
+        Func<Guid, ChecklistSnapshotItem, CancellationToken, Task<ChecklistItemExecutionResult>> handler)
+        : IChecklistRunAgentExecutor
     {
-        public Task<ChecklistItemExecutionResult> ExecuteAsync(
-            ChecklistItemExecutionRequest request,
+        public async Task ExecuteAsync(
+            ChecklistRunAgentRequest request,
+            Func<Guid, ChecklistItemExecutionResult, Task> onItemCompleted,
             CancellationToken cancellationToken = default)
-            => handler(request, cancellationToken);
-    }
-
-    private sealed class RecordingSummaryService(List<string> calls) : IRunSummaryService
-    {
-        public Task<Guid?> SummarizeRunAsync(Guid checklistRunId, CancellationToken cancellationToken = default)
         {
-            calls.Add($"summary:{checklistRunId}");
-            return Task.FromResult<Guid?>(null);
+            foreach (var item in request.Snapshot.Items.OrderBy(item => item.SortOrder))
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                var result = await handler(request.ChecklistRunId, item, cancellationToken);
+                await onItemCompleted(item.ItemId, result);
+            }
         }
     }
 
-    private sealed class ThrowingSummaryService : IRunSummaryService
+    private sealed class ThrowingFindingNotifier : IFindingNotifier
     {
-        public Task<Guid?> SummarizeRunAsync(Guid checklistRunId, CancellationToken cancellationToken = default)
-            => throw new InvalidOperationException("摘要服务故障");
+        public Task EvaluateRunAsync(Guid checklistRunId, CancellationToken cancellationToken = default)
+            => throw new InvalidOperationException("finding 服务故障");
     }
 
     private sealed class RecordingFindingNotifier(List<string> calls) : IFindingNotifier

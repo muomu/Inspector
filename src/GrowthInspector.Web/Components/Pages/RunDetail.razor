@@ -162,7 +162,7 @@ else
                                 </span>
                                 <StatusBadge Value="@presentation" />
                                 <span class="result__meta">
-                                    @result.ToolCallCount 次 · @DisplayText.FormatDuration(result.DurationMs) · @(result.PromptTokens + result.CompletionTokens) token
+                                    @result.ToolCallCount 次 · @DisplayText.FormatDuration(result.DurationMs) · @(result.PromptTokens + result.CompletionTokens) token@CacheHitSuffix(result.PromptTokens, result.CachedPromptTokens)
                                 </span>
                             </summary>
                             <div class="result__body">
@@ -194,7 +194,7 @@ else
                                     <div>
                                         <p class="result__label">工具与 token</p>
                                         <p class="result__value">
-                                            @result.ToolCallCount 次工具调用 · @DisplayText.FormatDuration(result.DurationMs) · @(result.PromptTokens + result.CompletionTokens) token
+                                            @result.ToolCallCount 次工具调用 · @DisplayText.FormatDuration(result.DurationMs) · @(result.PromptTokens + result.CompletionTokens) token@CacheHitSuffix(result.PromptTokens, result.CachedPromptTokens)
                                         </p>
                                     </div>
                                 </div>
@@ -527,7 +527,7 @@ else
         <div class="section__head">
             <span class="section__index">§ 05</span>
             <h2 class="section__title" id="s-notify">通知与摘要</h2>
-            <span class="section__meta">通知 @larkNotifications.Count 条 · 摘要 @(run.Summary is null ? "无" : "1 份")</span>
+            <span class="section__meta">通知 @larkNotifications.Count 条</span>
         </div>
         <div class="section__body">
             <h3 class="panel__title">Lark 留痕</h3>
@@ -569,37 +569,14 @@ else
                 </div>
             }
 
-            <h3 class="panel__title" style="margin-top: 24px;">AI 摘要</h3>
-            @if (run.Summary is null)
-            {
-                <p class="note">本轮没有 AI 摘要（摘要 agent 生成后会写入 AiSummary 并在这里展示）。</p>
-            }
-            else
-            {
-                <div class="status-line">
-                    @if (!string.IsNullOrWhiteSpace(run.Summary.Model))
-                    {
-                        <span class="chip">模型 @run.Summary.Model</span>
-                    }
-                    <span class="chip">token @(run.Summary.PromptTokens + run.Summary.CompletionTokens)</span>
-                    <span class="chip">耗时 @DisplayText.FormatDuration(run.Summary.DurationMs)</span>
-                    @if (run.Summary.FallbackUsed)
-                    {
-                        <span class="chip">模板兜底</span>
-                    }
-                    else
-                    {
-                        <span class="chip">AI 生成</span>
-                    }
-                    <span class="note">@run.Summary.CreatedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss")</span>
-                </div>
-                <details class="evidence">
-                    <summary>摘要正文 · @run.Summary.Content.Length 字 · 查看全文</summary>
-                    <div class="evidence__body">
-                        <pre class="code">@run.Summary.Content</pre>
-                    </div>
-                </details>
-            }
+            <h3 class="panel__title" style="margin-top: 24px;">执行计量</h3>
+            <div class="status-line">
+                <span class="chip">token @(run.PromptTokens + run.CompletionTokens)</span>
+                <span class="chip">输入 @run.PromptTokens / 输出 @run.CompletionTokens</span>
+                <span class="chip">缓存命中 @CacheHitText(run.PromptTokens, run.CachedPromptTokens)</span>
+                <span class="chip">耗时 @DisplayText.FormatDuration(run.DurationMs)</span>
+            </div>
+            <p class="note">缓存命中为 prompt tokens 中命中 provider 前缀缓存的比例；每轮执行的摘要已并入日报（每天一次由日报 agent 生成）。</p>
         </div>
     </section>
 }
@@ -694,7 +671,6 @@ else
                 .Include(x => x.Checklist)
                 .Include(x => x.Environment)
                 .Include(x => x.Results)
-                .Include(x => x.Summary)
                 .AsNoTracking()
                 .AsSplitQuery()
                 .SingleOrDefaultAsync(x => x.Id == Id);
@@ -885,6 +861,12 @@ else
     }
 
     private static string ResultClass(ResultRow row) => "result";
+
+    private static string CacheHitText(int promptTokens, int cachedTokens)
+        => promptTokens > 0 ? $"{Math.Round(cachedTokens * 100.0 / promptTokens):0}%" : "—";
+
+    private static string CacheHitSuffix(int promptTokens, int cachedTokens)
+        => promptTokens > 0 ? $" · 缓存命中 {Math.Round(cachedTokens * 100.0 / promptTokens):0}%" : string.Empty;
 
     private static string VerdictText(VerdictStatus? verdict) => verdict switch
     {

@@ -9,6 +9,7 @@ public sealed record AgentLoopResult(
     int Turns,
     int PromptTokens,
     int CompletionTokens,
+    int CachedPromptTokens,
     bool MaxTurnsReached,
     string? ErrorMessage);
 
@@ -34,6 +35,7 @@ public static class AgentToolLoop
         var turnLimit = maxTurns > 0 ? maxTurns : int.MaxValue;
         var promptTokens = 0;
         var completionTokens = 0;
+        var cachedPromptTokens = 0;
 
         for (var turn = 1; turn <= turnLimit; turn++)
         {
@@ -46,6 +48,7 @@ public static class AgentToolLoop
             var response = await chatClient.GetResponseAsync(messages, options, cancellationToken);
             promptTokens += ToInt(response.Usage?.InputTokenCount);
             completionTokens += ToInt(response.Usage?.OutputTokenCount);
+            cachedPromptTokens += ToInt(response.Usage?.CachedInputTokenCount);
 
             if (response.Messages.Count > 0)
             {
@@ -69,6 +72,7 @@ public static class AgentToolLoop
                     turn,
                     promptTokens,
                     completionTokens,
+                    cachedPromptTokens,
                     MaxTurnsReached: false,
                     ErrorMessage: null);
             }
@@ -91,6 +95,7 @@ public static class AgentToolLoop
             Turns: turnLimit,
             promptTokens,
             completionTokens,
+            cachedPromptTokens,
             MaxTurnsReached: true,
             ErrorMessage: $"达到工具调用轮次上限（{turnLimit}），模型未给出最终结论。");
     }

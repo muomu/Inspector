@@ -4,7 +4,6 @@ using GrowthInspector.Core.Abstractions;
 using GrowthInspector.Core.Models;
 using GrowthInspector.Data;
 using GrowthInspector.Orchestration.Scheduling;
-using GrowthInspector.Orchestration.Summaries;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -12,14 +11,14 @@ using Microsoft.Extensions.Logging;
 namespace GrowthInspector.Orchestration;
 
 /// <summary>
-/// 检查单执行编排：读快照 → 按 SortOrder 串行执行检查项（每项结束立即落库）→ 收尾。
+/// 检查单执行编排：读快照 → 委托执行 agent（整轮一个会话、框架主导逐项推进）→ 每项回调立即落库 → 收尾。
 /// 检查单内部无并发；检查单之间的并行由后台队列 worker 提供（TPG-2707）。
 /// 本类不引入 MAF，也不做检查项级 fan-out。
 /// </summary>
 public sealed class ChecklistRunOrchestrator(
     ChecklistRunFactory runFactory,
     IDbContextFactory<GrowthInspectorDbContext> dbContextFactory,
-    IChecklistItemExecutor itemExecutor,
+    IChecklistRunAgentExecutor runAgentExecutor,
     IServiceProvider serviceProvider,
     TimeProvider timeProvider,
     ILogger<ChecklistRunOrchestrator> logger) : IInspectionOrchestrator, IChecklistRunExecutor
@@ -85,6 +84,7 @@ public sealed class ChecklistRunOrchestrator(
         var stopwatch = Stopwatch.StartNew();
         var promptTokens = 0;
         var completionTokens = 0;
+        var cachedPromptTokens = 0;
 
         try
         {
@@ -101,56 +101,27 @@ public sealed class ChecklistRunOrchestrator(
             run.Status = RunStatus.Running;
             await db.SaveChangesAsync(cancellationToken);
 
-            foreach (var item in snapshot.Items.OrderBy(x => x.SortOrder))
-            {
-                cancellationToken.ThrowIfCancellationRequested();
+            var agentRequest = new ChecklistRunAgentRequest(
+                run.Id,
+                project.Id,
+                run.EnvironmentId,
+                project.OpsContext,
+                snapshot);
 
-                var request = new ChecklistItemExecutionRequest(
-                    run.Id,
-                    project.Id,
-                    run.EnvironmentId,
-                    project.OpsContext,
-                    item,
-                    snapshot.GeneralRunbooks,
-                    snapshot.ReferencedRunbooks,
-                    snapshot.Findings.Where(x => x.ChecklistItemId == item.ItemId).ToList());
-
-                var itemStopwatch = Stopwatch.StartNew();
-                ChecklistItemExecutionResult? execution;
-                try
+            // 整轮一个 agent 会话；每项完成立即落库，页面可在执行中逐项看到结果。
+            // 单项失败已由执行 agent 隔离为 Error，这里只处理会话级异常。
+            await runAgentExecutor.ExecuteAsync(
+                agentRequest,
+                async (itemId, execution) =>
                 {
-                    execution = await itemExecutor.ExecuteAsync(request, cancellationToken);
-                }
-                catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-                {
-                    throw;
-                }
-                catch (Exception ex)
-                {
-                    logger.LogError(
-                        ex,
-                        "检查项「{Title}」执行失败（runId={RunId}），记 Error 后继续后续检查项。",
-                        item.Title,
-                        run.Id);
-                    execution = new ChecklistItemExecutionResult(
-                        Status: CheckResultStatus.Error,
-                        ErrorMessage: ex.Message,
-                        DurationMs: itemStopwatch.ElapsedMilliseconds);
-                }
+                    promptTokens += execution.PromptTokens;
+                    completionTokens += execution.CompletionTokens;
+                    cachedPromptTokens += execution.CachedPromptTokens;
 
-                itemStopwatch.Stop();
-                execution ??= new ChecklistItemExecutionResult(
-                    Status: CheckResultStatus.Error,
-                    ErrorMessage: "检查项执行器返回了空结果。",
-                    DurationMs: itemStopwatch.ElapsedMilliseconds);
-
-                promptTokens += execution.PromptTokens;
-                completionTokens += execution.CompletionTokens;
-
-                // 每项结束立即落库，不攒到整轮结束（页面可在执行中逐项看到结果）。
-                db.CheckResults.Add(ToCheckResult(run.Id, item.ItemId, execution, itemStopwatch.ElapsedMilliseconds));
-                await db.SaveChangesAsync(cancellationToken);
-            }
+                    db.CheckResults.Add(ToCheckResult(run.Id, itemId, execution));
+                    await db.SaveChangesAsync(cancellationToken);
+                },
+                cancellationToken);
 
             // 全部检查项都产出了结果（含 Error）即视为本轮执行完成；单项错误不改变整轮成功状态。
             run.Status = RunStatus.Succeeded;
@@ -175,6 +146,7 @@ public sealed class ChecklistRunOrchestrator(
             run.DurationMs = stopwatch.ElapsedMilliseconds;
             run.PromptTokens = promptTokens;
             run.CompletionTokens = completionTokens;
+            run.CachedPromptTokens = cachedPromptTokens;
 
             // 收尾保存不跟随取消令牌，避免取消时丢掉最终状态。
             try
@@ -188,45 +160,21 @@ public sealed class ChecklistRunOrchestrator(
         }
 
         logger.LogInformation(
-            "检查单 {ChecklistId} 在环境 {EnvironmentId} 执行结束（runId={RunId}，状态 {Status}，耗时 {ElapsedMs} ms，token {PromptTokens}+{CompletionTokens}）。",
+            "检查单 {ChecklistId} 在环境 {EnvironmentId} 执行结束（runId={RunId}，状态 {Status}，耗时 {ElapsedMs} ms，token {PromptTokens}+{CompletionTokens}，缓存命中 {CachedPromptTokens}）。",
             checklist.Id,
             run.EnvironmentId,
             run.Id,
             run.Status,
             run.DurationMs,
             run.PromptTokens,
-            run.CompletionTokens);
+            run.CompletionTokens,
+            run.CachedPromptTokens);
 
-        // 整轮结束后先生成摘要，再做 finding / Lark 判定；两者都是旁路，失败不改变执行终态，
+        // 整轮结束后做 finding / Lark 判定；旁路失败不改变执行终态，
         // 也不在这里重复实现 finding 状态机（由 TPG-2713 的 IFindingNotifier 负责）。
         if (run.Status is RunStatus.Succeeded or RunStatus.Failed)
         {
-            await TrySummarizeAsync(run.Id, cancellationToken);
             await TryEvaluateFindingsAsync(run.Id, cancellationToken);
-        }
-    }
-
-    private async Task TrySummarizeAsync(Guid checklistRunId, CancellationToken cancellationToken)
-    {
-        try
-        {
-            var summaryService = serviceProvider.GetService<IRunSummaryService>();
-            if (summaryService is null)
-            {
-                logger.LogDebug("未注册 IRunSummaryService，跳过执行 {RunId} 的摘要生成。", checklistRunId);
-                return;
-            }
-
-            await summaryService.SummarizeRunAsync(checklistRunId, cancellationToken);
-        }
-        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-        {
-            logger.LogInformation("应用停止，跳过执行 {RunId} 的摘要生成。", checklistRunId);
-        }
-        catch (Exception ex)
-        {
-            // 摘要失败不影响本轮执行结果；AiSummary 由摘要服务自身兜底。
-            logger.LogError(ex, "执行 {RunId} 的摘要生成失败（不改变执行终态）。", checklistRunId);
         }
     }
 
@@ -249,7 +197,7 @@ public sealed class ChecklistRunOrchestrator(
         }
         catch (Exception ex)
         {
-            // finding / Lark 失败不影响本轮执行结果。
+            // finding / Lark 失败不影响执行结果。
             logger.LogError(ex, "执行 {RunId} 的 finding 判定失败（不改变执行终态）。", checklistRunId);
         }
     }
@@ -257,8 +205,7 @@ public sealed class ChecklistRunOrchestrator(
     private static CheckResult ToCheckResult(
         Guid runId,
         Guid checklistItemId,
-        ChecklistItemExecutionResult execution,
-        long elapsedMs)
+        ChecklistItemExecutionResult execution)
         => new()
         {
             ChecklistRunId = runId,
@@ -271,9 +218,10 @@ public sealed class ChecklistRunOrchestrator(
                 : null,
             ToolCallCount = execution.ToolCallCount,
             Evidence = execution.Evidence,
-            DurationMs = execution.DurationMs > 0 ? execution.DurationMs : elapsedMs,
+            DurationMs = execution.DurationMs,
             PromptTokens = execution.PromptTokens,
             CompletionTokens = execution.CompletionTokens,
+            CachedPromptTokens = execution.CachedPromptTokens,
             ErrorMessage = execution.ErrorMessage,
         };
 }
