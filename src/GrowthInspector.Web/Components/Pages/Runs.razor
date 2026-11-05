@@ -26,8 +26,7 @@
     </div>
     <div class="page-head__actions">
         <a class="btn btn--quiet" href="@FindingsHref">异常</a>
-        <a class="btn btn--primary" href="@ChecklistsHref">立即巡检</a>
-    </div>
+        <a class="btn btn--primary" href="@ChecklistsHref">立即巡检</a>    </div>
 </header>
 
 @if (loadError is not null)
@@ -220,7 +219,7 @@ else
 
     private string ContextQuery => workspace.QuerySuffix;
     private string RunsHref => $"/runs{ContextQuery}";
-    private string FindingsHref => $"/findings{ContextQuery}";
+    private string FindingsHref => $"/{ContextQuery}#s-findings";
     private string ChecklistsHref => $"/checklists{ContextQuery}";
     private string SettingsHref => $"/settings{ContextQuery}";
 

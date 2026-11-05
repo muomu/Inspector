@@ -5,7 +5,7 @@
 
 > v1 已完成（TPG-2717 收口）：三层模型、通用 / 专用知识注入、检查单内串行 + 检查单间并行的后台队列、
 > agent 取证 + 框架复核双判、finding 去重与规则版本、Lark mock 通道、每日日报、管理 MCP server、
-> 执行历史 / 异常 / 日报页面。真实 DeepSeek key 与真实 Lark webhook 按 v1 口径不接入，全链路以 mock 验收。
+> 执行历史 / 日报页面（异常列表并入总览「需要处理」，详情见 `/findings/{id}`）。真实 DeepSeek key 与真实 Lark webhook 按 v1 口径不接入，全链路以 mock 验收。
 
 ## 核心模型
 
@@ -57,10 +57,11 @@ docs/inspection-knowledge.md       A/B/C 判据 → 手册 → 检查单 / 检�
 ## 设计系统（全站已迁移）
 
 - `/styleguide`：C 留白冻结稿（丝绸灰 / 玄色，烟墨 / 月白），含色板、字体、五态、表格、集群节点、证据与空态。
-- 全站统一 `DesignLayout`（项目/环境上下文、主题切换、`总览 / 异常 / 执行 / 报告 / 体系 / 设置`）与
+- 全站统一 `DesignLayout`（项目/环境上下文、主题切换、`总览 / 执行 / 报告 / 体系 / 设置`）与
   `wwwroot/css/design-system.css`（token 挂 `:root`，页面底纹 + `paper-raised` 内容纸）；旧 `MainLayout` / `app.css` 页面样式已删除。
-- 结果页：`/` 总览（集群结论 → 服务/依赖网格 → 需要处理 → 最近执行）、`/findings`（4 KPI → 未恢复/已恢复 → 待证观察 → 健康态）、
-  `/runs` + `/runs/{id}`（运行头 + 判定 meter → 检查项折叠 → 工具调用 → 观察 → 快照 → 通知/摘要）、`/reports`（日报 + 发送留痕）。
+- 结果页：`/` 总览（集群结论 → 服务/依赖网格 → 需要处理（未恢复按严重级分层 + 最近已恢复折叠段）→ 最近执行）、
+  `/findings/{id}`（异常详情：现状与证据 → 时间线）、`/findings` 重定向回总览「需要处理」、
+  `/runs` + `/runs/{id}`（运行头 + 判定 meter → 检查项折叠 → 待证观察 → 工具调用 → 观察 → 快照 → 通知/摘要）、`/reports`（日报 + 发送留痕）。
 - 配置页：`/systems`（体系落地页：知识资产 / 检查单 / MCP / 项目环境）→ `/runbooks`、`/checklists`（含编辑页）、`/settings`。
 - 状态只经 `StatusPresenter`（五态 + Running；`Succeeded = 完成`，`Error / Mismatch / 证据不足 = 待证`，朱红只给 Critical）；
   跨页文案收敛到 `DisplayText`，执行判定分布收敛到 `RunVerdictBuilder`。

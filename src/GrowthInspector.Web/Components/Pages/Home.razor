@@ -189,10 +189,10 @@ else
         <div class="section__head">
             <span class="section__index">§ 02</span>
             <h2 class="section__title" id="s-findings">需要处理</h2>
-            <span class="section__meta">@openFindingCount 条未恢复</span>
+            <span class="section__meta">@board.OpenCount 条未恢复 · 已恢复 @board.ResolvedCount 条</span>
         </div>
         <div class="section__body">
-            @if (openFindings.Count == 0)
+            @if (board.OpenTiers.Count == 0)
             {
                 <div class="@EmptyFindingsClass">
                     <span class="empty__glyph" aria-hidden="true">@(allHealthy ? "✓" : "◇")</span>
@@ -202,40 +202,105 @@ else
             }
             else
             {
-                @foreach (var row in openFindings)
+                @foreach (var tier in board.OpenTiers)
                 {
-                    <article class="finding @row.Severity.FindingModifierClass">
-                        <div class="finding__severity @row.Severity.SeverityModifierClass">
-                            <span aria-hidden="true">@row.Severity.Glyph</span> @row.Severity.Label
+                    <div class="cluster-group">
+                        <div class="cluster-group__head">
+                            <h3>@tier.Title</h3>
+                            <span>@tier.TotalCount 条未恢复</span>
                         </div>
-                        <div class="finding__main">
-                            <h3 class="finding__title">@row.Finding.Title</h3>
-                            <p class="finding__meta">
-                                @if (!string.IsNullOrWhiteSpace(row.Finding.Message))
-                                {
-                                    <span>@Shorten(row.Finding.Message!, 96)</span>
-                                }
-                                <span>规则 v@(row.Finding.RuleVersion)</span>
-                                <span>首次 @row.Finding.FirstSeenAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm")</span>
-                                <span>最近 @row.Finding.LastSeenAt.ToLocalTime().ToString("MM-dd HH:mm")</span>
+                        @foreach (var row in tier.Rows)
+                        {
+                            <article class="finding @row.Severity.FindingModifierClass">
+                                <div class="finding__severity @row.Severity.SeverityModifierClass">
+                                    <span aria-hidden="true">@row.Severity.Glyph</span> @row.Severity.Label
+                                </div>
+                                <div class="finding__main">
+                                    <h3 class="finding__title"><a href="@row.DetailHref">@row.Finding.Title</a></h3>
+                                    <p class="finding__meta">
+                                        @if (!string.IsNullOrWhiteSpace(row.Finding.Message))
+                                        {
+                                            <span>@Shorten(row.Finding.Message!, 120)</span>
+                                        }
+                                        <span>
+                                            检查单 @NameOrMissing(row.ChecklistName)
+                                            @if (row.ChecklistArchived)
+                                            {
+                                                <span class="chip">已归档</span>
+                                            }
+                                        </span>
+                                        <span>
+                                            检查项 @NameOrMissing(row.ItemName)
+                                            @if (row.ItemArchived)
+                                            {
+                                                <span class="chip">已归档</span>
+                                            }
+                                        </span>
+                                        <span>规则 v@(row.Finding.RuleVersion)</span>
+                                        <span>首次 @row.Finding.FirstSeenAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm")</span>
+                                        <span>最近 @row.Finding.LastSeenAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm")</span>
+                                    </p>
+                                </div>
+                                <div class="finding__side">
+                                    <StatusBadge Value="@StatusPresenter.FromFinding(FindingStatus.Open)" />
+                                    <a href="@row.DetailHref">详情 →</a>
+                                </div>
+                            </article>
+                        }
+                        @if (tier.Truncated)
+                        {
+                            <p class="note" style="margin-top: 14px;">
+                                该级共 @tier.TotalCount 条，按最近出现显示前 @tier.Rows.Count 条。
                             </p>
-                        </div>
-                        <div class="finding__side">
-                            <StatusBadge Value="@StatusPresenter.FromFinding(FindingStatus.Open)" />
-                            <a href="@FindingsHref">查看异常 →</a>
-                        </div>
-                    </article>
+                        }
+                    </div>
                 }
-                @if (openFindingCount > openFindings.Count)
-                {
-                    <p class="note" style="margin-top: 14px;">
-                        共 @openFindingCount 条未恢复异常，这里按严重级只显示前 @openFindings.Count 条；完整列表见异常页。
-                    </p>
-                }
-                <p class="note" style="margin-top: 14px;">
-                    只有「断言不成立 + 框架复核一致」才进入 Finding；Error / Mismatch 只进日报观察。
-                </p>
             }
+
+            @if (board.RecentResolved.Count > 0)
+            {
+                <details class="evidence" style="margin-top: 28px;">
+                    <summary>最近已恢复 · 共 @board.ResolvedCount 条，显示最近 @board.RecentResolved.Count 条</summary>
+                    <div class="evidence__body">
+                        <div class="table-wrap" role="region" aria-label="最近已恢复的异常" tabindex="0">
+                            <table class="table">
+                                <caption class="sr-only">最近已恢复的异常</caption>
+                                <thead>
+                                    <tr>
+                                        <th scope="col">标题</th>
+                                        <th scope="col">检查项</th>
+                                        <th scope="col">级别</th>
+                                        <th scope="col">恢复时间</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @foreach (var row in board.RecentResolved)
+                                    {
+                                        <tr>
+                                            <td><a class="table__title" href="@row.DetailHref">@row.Finding.Title</a></td>
+                                            <td>
+                                                @NameOrMissing(row.ItemName)
+                                                @if (row.ItemArchived)
+                                                {
+                                                    <span class="chip">已归档</span>
+                                                }
+                                            </td>
+                                            <td><span class="@SeverityChipClass(row.Severity)">@row.Severity.Label</span></td>
+                                            <td class="mono">@(row.Finding.ResolvedAt?.ToLocalTime().ToString("yyyy-MM-dd HH:mm") ?? "-")</td>
+                                        </tr>
+                                    }
+                                </tbody>
+                            </table>
+                        </div>
+                        <p class="note">已恢复的异常不清库；打开详情可回溯它的完整时间线。</p>
+                    </div>
+                </details>
+            }
+
+            <p class="note" style="margin-top: 14px;">
+                只有「断言不成立 + 框架复核一致」才进入 Finding；Error / Mismatch 只进日报观察。
+                Finding 按项目、环境、检查单、检查项去重并绑定规则版本；规则变更时旧 finding 以「判据变更」关闭，新版本再开。
+            </p>
         </div>
     </section>
 
@@ -285,7 +350,7 @@ else
     private string pageTitle = "集群诊断";
     private ChecklistRun? clusterRun;
     private List<RunRow> recentRuns = [];
-    private List<FindingRow> openFindings = [];
+    private FindingsBoard board = FindingsBoard.Empty;
     private List<ClusterNodeView> serviceNodes = [];
     private List<ClusterNodeView> dependencyNodes = [];
     private int totalNodes;
@@ -298,14 +363,12 @@ else
     private int otherPendingCount;
     private int otherAttentionCount;
     private int expectedItemCount;
-    private int openFindingCount;
     private bool allExpectedResultsPresent;
     private bool allHealthy;
     private string? firstRunError;
 
     private string ContextQuery => workspace.QuerySuffix;
     private string RunsHref => $"/runs{ContextQuery}";
-    private string FindingsHref => $"/findings{ContextQuery}";
     private string ChecklistsHref => $"/checklists{ContextQuery}";
 
     private string ClusterMeterLabel =>
@@ -368,9 +431,9 @@ else
                 parts.Add($"另有 {otherAttentionCount} 项流水线检查需要注意 / 异常。");
             }
 
-            if (openFindingCount > 0)
+            if (board.OpenCount > 0)
             {
-                parts.Add($"当前 {openFindingCount} 条未恢复异常。");
+                parts.Add($"当前 {board.OpenCount} 条未恢复异常。");
             }
 
             return string.Concat(parts);
@@ -466,17 +529,58 @@ else
                     : "集群诊断";
             }
 
-            var open = await db.Findings
+            var openCounts = new Dictionary<Severity, int>
+            {
+                [Severity.Critical] = await db.Findings.CountAsync(
+                    x => x.EnvironmentId == current.EnvironmentId
+                        && x.Status == FindingStatus.Open
+                        && x.Severity == Severity.Critical),
+                [Severity.Warning] = await db.Findings.CountAsync(
+                    x => x.EnvironmentId == current.EnvironmentId
+                        && x.Status == FindingStatus.Open
+                        && x.Severity == Severity.Warning),
+                [Severity.Info] = await db.Findings.CountAsync(
+                    x => x.EnvironmentId == current.EnvironmentId
+                        && x.Status == FindingStatus.Open
+                        && x.Severity == Severity.Info),
+            };
+
+            // 枚举在 SQLite 里落成 TEXT，直接按列排序会变成字典序；用数值权重显式降序。
+            var openRows = await db.Findings
                 .Where(x => x.EnvironmentId == current.EnvironmentId && x.Status == FindingStatus.Open)
+                .OrderByDescending(x => x.Severity == Severity.Critical ? 3 : x.Severity == Severity.Warning ? 2 : 1)
+                .ThenByDescending(x => x.LastSeenAt)
+                .Take(FindingsBoardBuilder.MaxOpenRows)
                 .AsNoTracking()
                 .ToListAsync();
-            openFindingCount = open.Count;
-            openFindings = open
-                .OrderByDescending(x => x.Severity)
-                .ThenByDescending(x => x.LastSeenAt)
-                .Take(5)
-                .Select(x => new FindingRow(x, StatusPresenter.FromSeverity(x.Severity)))
-                .ToList();
+
+            var resolvedCount = await db.Findings.CountAsync(
+                x => x.EnvironmentId == current.EnvironmentId && x.Status == FindingStatus.Resolved);
+            var resolvedRows = await db.Findings
+                .Where(x => x.EnvironmentId == current.EnvironmentId && x.Status == FindingStatus.Resolved)
+                .OrderByDescending(x => x.ResolvedAt ?? x.LastSeenAt)
+                .Take(FindingsBoardBuilder.MaxResolvedRows)
+                .AsNoTracking()
+                .ToListAsync();
+
+            var scopedFindings = openRows.Concat(resolvedRows).ToList();
+            var checklistIds = scopedFindings.Select(x => x.ChecklistId).Distinct().ToList();
+            var itemIds = scopedFindings.Select(x => x.ChecklistItemId).Distinct().ToList();
+            var checklists = await db.Checklists
+                .Where(x => checklistIds.Contains(x.Id))
+                .Select(x => new { x.Id, x.Name, x.IsArchived })
+                .AsNoTracking()
+                .ToListAsync();
+            var items = await db.ChecklistItems
+                .Where(x => itemIds.Contains(x.Id))
+                .Select(x => new { x.Id, x.Title, x.IsArchived })
+                .AsNoTracking()
+                .ToListAsync();
+            var checklistMap = checklists.ToDictionary(x => x.Id, x => ((string?)x.Name, x.IsArchived));
+            var itemMap = items.ToDictionary(x => x.Id, x => ((string?)x.Title, x.IsArchived));
+
+            board = FindingsBoardBuilder.Build(
+                openRows, openCounts, resolvedRows, resolvedCount, checklistMap, itemMap);
 
             allHealthy = totalNodes > 0
                 && okCount == totalNodes
@@ -485,7 +589,7 @@ else
                 && otherAttentionCount == 0
                 && allExpectedResultsPresent
                 && clusterRun?.Status == RunStatus.Succeeded
-                && openFindingCount == 0;
+                && board.OpenCount == 0;
         }
         catch (Exception ex)
         {
@@ -555,5 +659,11 @@ else
 
     private sealed record RunRow(ChecklistRun Run, string ChecklistName, string EnvironmentName);
 
-    private sealed record FindingRow(Finding Finding, StatusPresentation Severity);
+    /// <summary>已恢复表格里的级别 chip；状态点在这里太抢眼，恢复段只需要层级标识。</summary>
+    private static string SeverityChipClass(StatusPresentation severity) => severity.State switch
+    {
+        StatusState.Danger => "chip chip--danger",
+        StatusState.Warning => "chip chip--warning",
+        _ => "chip",
+    };
 }

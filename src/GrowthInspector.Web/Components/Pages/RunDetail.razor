@@ -262,9 +262,57 @@ else
         </div>
     </section>
 
-    <section class="section" aria-labelledby="s-tools">
+    <section class="section" aria-labelledby="s-pending">
         <div class="section__head">
             <span class="section__index">§ 02</span>
+            <h2 class="section__title" id="s-pending">待证观察</h2>
+            <span class="section__meta">@pendingRows.Count 项 · 不建 Finding 不发 Lark</span>
+        </div>
+        <div class="section__body">
+            @if (pendingRows.Count == 0)
+            {
+                <p class="note">本轮没有 Error 或证据不足的结果；待证不是故障，但也不能读作健康。</p>
+            }
+            else
+            {
+                <div class="table-wrap" role="region" aria-label="本轮待证观察" tabindex="0">
+                    <table class="table">
+                        <caption class="sr-only">本轮执行中 Error 或证据不足的检查项</caption>
+                        <thead>
+                            <tr>
+                                <th scope="col">检查项</th>
+                                <th scope="col">综合结果</th>
+                                <th scope="col">说明</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var row in pendingRows)
+                            {
+                                <tr>
+                                    <td class="table__title">
+                                        @row.Title
+                                        @if (row.Archived)
+                                        {
+                                            <span class="chip">已归档</span>
+                                        }
+                                    </td>
+                                    <td><StatusBadge Value="@row.Presentation" /></td>
+                                    <td>@row.DetailText</td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+                <p class="note" style="margin-top: 14px;">
+                    这些结果不建 Finding、不发 Lark，只在日报观察段出现；待证不是故障，先看上方检查项结果里的执行证据。
+                </p>
+            }
+        </div>
+    </section>
+
+    <section class="section" aria-labelledby="s-tools">
+        <div class="section__head">
+            <span class="section__index">§ 03</span>
             <h2 class="section__title" id="s-tools">工具调用</h2>
             <span class="section__meta">@run.ToolCalls.Count 次调用 · 参数与结果折叠</span>
         </div>
@@ -364,7 +412,7 @@ else
 
     <section class="section" aria-labelledby="s-observations">
         <div class="section__head">
-            <span class="section__index">§ 03</span>
+            <span class="section__index">§ 04</span>
             <h2 class="section__title" id="s-observations">观察</h2>
             <span class="section__meta">@ObservationCount 条 · 只进日报观察</span>
         </div>
@@ -404,7 +452,7 @@ else
 
     <section class="section" aria-labelledby="s-snapshot">
         <div class="section__head">
-            <span class="section__index">§ 04</span>
+            <span class="section__index">§ 05</span>
             <h2 class="section__title" id="s-snapshot">执行快照</h2>
             <span class="section__meta">@SnapshotMeta</span>
         </div>
@@ -590,7 +638,7 @@ else
 
     <section class="section" aria-labelledby="s-notify">
         <div class="section__head">
-            <span class="section__index">§ 05</span>
+            <span class="section__index">§ 06</span>
             <h2 class="section__title" id="s-notify">通知与摘要</h2>
             <span class="section__meta">通知 @larkNotifications.Count 条 · 摘要 @(run.Summary is null ? "无" : "1 份")</span>
         </div>
@@ -697,6 +745,7 @@ else
     private ChecklistSnapshot? snapshot;
     private string? snapshotError;
     private List<ResultRow> resultRows = [];
+    private IReadOnlyList<PendingObservationRow> pendingRows = [];
     private List<ObservationGroup> observationGroups = [];
     private RunVerdict verdict = RunVerdict.Empty;
     private List<LarkNotification> larkNotifications = [];
@@ -892,6 +941,9 @@ else
             .Where(x => x.observations.Count > 0)
             .Select(x => new ObservationGroup(x.row.Title, x.row.Archived, x.row.Missing, x.observations))
             .ToList();
+
+        pendingRows = PendingObservationsBuilder.Build(resultRows.Select(row =>
+            (row.Result, row.Title, row.Archived, row.Severity, row.ItemKind, ItemSortOrder(row.Result.ChecklistItemId))));
     }
 
     private void ParseSnapshot()

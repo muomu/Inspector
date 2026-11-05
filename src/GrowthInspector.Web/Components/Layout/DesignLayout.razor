@@ -21,7 +21,6 @@
 
             <nav class="nav" aria-label="主导航">
                 <a class="@NavClass("/")" href="@HomeHref">总览</a>
-                <a class="@NavClass("/findings")" href="@FindingsHref">异常</a>
                 <a class="@NavClass("/runs")" href="@RunsHref">执行</a>
                 <a class="@NavClass("/reports")" href="@ReportsHref">报告</a>
                 <a class="@NavClass("/systems")" href="@SystemsHref">体系</a>
@@ -80,7 +79,6 @@
     private string contextQuery = string.Empty;
 
     private string HomeHref => $"/{contextQuery}";
-    private string FindingsHref => $"/findings{contextQuery}";
     private string RunsHref => $"/runs{contextQuery}";
     private string ReportsHref => $"/reports{contextQuery}";
     private string SystemsHref => $"/systems{contextQuery}";

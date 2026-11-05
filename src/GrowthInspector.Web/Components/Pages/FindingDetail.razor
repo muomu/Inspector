@@ -1,0 +1,315 @@
+@page "/findings/{Id:guid}"
+@layout DesignLayout
+@inject IDbContextFactory<GrowthInspectorDbContext> DbFactory
+@inject WorkspaceContextService Workspace
+@inject NavigationManager Nav
+
+<PageTitle>异常详情 · Growth Inspector</PageTitle>
+
+<nav class="breadcrumb" aria-label="面包屑">
+    <a href="@BoardHref">总览 · 需要处理</a>
+    <span class="breadcrumb__sep" aria-hidden="true">/</span>
+    <span>异常详情</span>
+</nav>
+
+<header class="page-head">
+    <div class="page-head__main">
+        <p class="kicker">异常 · Finding</p>
+        <h1 class="page-title">异常详情</h1>
+        @if (finding is not null)
+        {
+            <p class="page-meta">
+                <span>
+                    检查单 @DisplayText.NameOrMissing(checklistName)
+                    @if (checklistArchived)
+                    {
+                        <span class="chip">已归档</span>
+                    }
+                </span>
+                <span>
+                    检查项 @DisplayText.NameOrMissing(itemTitle)
+                    @if (itemArchived)
+                    {
+                        <span class="chip">已归档</span>
+                    }
+                </span>
+                <span><StatusBadge Value="@StatusPresenter.FromSeverity(finding.Severity)" /></span>
+                <span><StatusBadge Value="@StatusPresenter.FromFinding(finding.Status, finding.CloseReason)" /></span>
+                <span>规则 v@(finding.RuleVersion)</span>
+            </p>
+        }
+    </div>
+    <div class="page-head__actions">
+        <a class="btn btn--quiet" href="@BoardHref">返回总览</a>
+    </div>
+</header>
+
+@if (loadError is not null)
+{
+    <p class="alert-line" role="alert"><strong>加载失败</strong><span>@loadError</span></p>
+}
+else if (finding is null)
+{
+    <div class="empty" style="margin-top: 40px;">
+        <span class="empty__glyph" aria-hidden="true">◇</span>
+        <h2 class="empty__title">异常记录不存在</h2>
+        <p class="empty__copy">该异常可能来自失效链接。Finding 不随审计清理删除，链接有误时请回总览重新进入。<a href="@BoardHref">返回总览</a></p>
+    </div>
+}
+else
+{
+    <section class="section" aria-labelledby="s-state">
+        <div class="section__head">
+            <span class="section__index">§ 01</span>
+            <h2 class="section__title" id="s-state">现状与证据</h2>
+            <span class="section__meta">@finding.Title</span>
+        </div>
+        <div class="section__body">
+            <div class="result__grid">
+                <div>
+                    <p class="result__label">首次出现</p>
+                    <p class="result__value mono">@finding.FirstSeenAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm")</p>
+                </div>
+                <div>
+                    <p class="result__label">最近出现</p>
+                    <p class="result__value mono">@finding.LastSeenAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm")</p>
+                </div>
+                <div>
+                    <p class="result__label">恢复时间</p>
+                    <p class="result__value mono">@(finding.ResolvedAt?.ToLocalTime().ToString("yyyy-MM-dd HH:mm") ?? "-")</p>
+                </div>
+                <div>
+                    <p class="result__label">关闭原因</p>
+                    <p class="result__value">@(finding.CloseReason is { } reason ? DisplayText.CloseReasonText(reason) : "-")</p>
+                </div>
+            </div>
+
+            @if (!string.IsNullOrWhiteSpace(finding.Message))
+            {
+                <div class="result__section">
+                    <p class="result__section-title">说明</p>
+                    <p class="result__text">@finding.Message</p>
+                </div>
+            }
+
+            <div class="result__section">
+                <p class="result__section-title">检查项上下文</p>
+                <p class="result__text">
+                    检查项 <strong>@DisplayText.NameOrMissing(itemTitle)</strong>
+                    @if (itemSeverity is { } severity)
+                    {
+                        <text>· 配置级别 </text><StatusBadge Value="@StatusPresenter.FromSeverity(severity)" />
+                    }
+                    else
+                    {
+                        <text>· 未配置级别</text>
+                    }
+                    @if (!string.IsNullOrWhiteSpace(assertionSummary))
+                    {
+                        <text>· 断言 <span class="mono">@assertionSummary</span></text>
+                    }
+                    else
+                    {
+                        <text>· 信息型（无断言）</text>
+                    }
+                </p>
+                @if (!string.IsNullOrWhiteSpace(expectation))
+                {
+                    <p class="result__text">@expectation</p>
+                }
+            </div>
+
+            @if (!string.IsNullOrWhiteSpace(finding.Evidence))
+            {
+                <details class="evidence">
+                    <summary>最近一次判定证据 · 展开查看全文</summary>
+                    <div class="evidence__body">
+                        <pre class="code">@finding.Evidence</pre>
+                    </div>
+                </details>
+            }
+            else
+            {
+                <p class="note">该 finding 没有存证；证据按最近一次判定刷新，恢复后的旧证据不保留。</p>
+            }
+        </div>
+    </section>
+
+    <section class="section" aria-labelledby="s-timeline">
+        <div class="section__head">
+            <span class="section__index">§ 02</span>
+            <h2 class="section__title" id="s-timeline">时间线</h2>
+            <span class="section__meta">@timeline.Count 轮 · 按历史执行记录重建</span>
+        </div>
+        <div class="section__body">
+            @if (timeline.Count == 0)
+            {
+                <p class="note">
+                    该检查项在近期执行里没有记录；可能从未执行过，或历史执行已被审计清理。
+                </p>
+            }
+            else
+            {
+                <div class="table-wrap" role="region" aria-label="异常时间线" tabindex="0">
+                    <table class="table">
+                        <caption class="sr-only">该检查项在历史执行中的判定与说明，按时间正序</caption>
+                        <thead>
+                            <tr>
+                                <th scope="col">执行时间</th>
+                                <th scope="col">综合结果</th>
+                                <th scope="col">说明</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var entry in timeline)
+                            {
+                                <tr>
+                                    <td>
+                                        <a class="table__title mono" href="@($"/runs/{entry.RunId}")">@entry.RunStartedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm")</a>
+                                    </td>
+                                    <td><StatusBadge Value="@entry.Presentation" /></td>
+                                    <td>@DisplayText.Shorten(entry.Detail, 140)</td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+                <p class="note">
+                    时间线由该检查项的历史执行结果重建（同一轮只取一条，最多回看 @FindingTimelineBuilder.RecentRunLimit 轮）；
+                    执行审计默认留存 90 天，更早的记录会随清理消失。
+                </p>
+            }
+        </div>
+    </section>
+}
+
+@code {
+    [Parameter]
+    public Guid Id { get; set; }
+
+    private WorkspaceContext workspace = WorkspaceContext.Empty;
+    private Finding? finding;
+    private string? checklistName;
+    private bool checklistArchived;
+    private string? itemTitle;
+    private bool itemArchived;
+    private Severity? itemSeverity;
+    private string? assertionSummary;
+    private string? expectation;
+    private IReadOnlyList<FindingTimelineEntry> timeline = [];
+    private string? loadError;
+
+    private string ContextQuery => workspace.QuerySuffix;
+    private string BoardHref => $"/{ContextQuery}#s-findings";
+
+    protected override async Task OnParametersSetAsync()
+    {
+        try
+        {
+            workspace = await Workspace.ResolveAsync(WorkspaceContextService.ReadQueryValue(Nav));
+
+            await using var db = await DbFactory.CreateDbContextAsync();
+
+            finding = await db.Findings.AsNoTracking().SingleOrDefaultAsync(x => x.Id == Id);
+            if (finding is null)
+            {
+                return;
+            }
+
+            var checklist = await db.Checklists
+                .Where(x => x.Id == finding.ChecklistId)
+                .Select(x => new { x.Name, x.IsArchived })
+                .AsNoTracking()
+                .FirstOrDefaultAsync();
+            checklistName = checklist?.Name;
+            checklistArchived = checklist?.IsArchived ?? false;
+
+            var item = await db.ChecklistItems
+                .Where(x => x.Id == finding.ChecklistItemId)
+                .Select(x => new ItemContext(
+                    x.Title, x.IsArchived, x.Severity, x.HasAssertion,
+                    x.ToolName, x.ValuePath, x.Operator, x.Threshold, x.Window, x.Expectation))
+                .AsNoTracking()
+                .FirstOrDefaultAsync();
+            itemTitle = item?.Title;
+            itemArchived = item?.IsArchived ?? false;
+            itemSeverity = item?.Severity;
+            assertionSummary = AssertionSummary(item);
+            expectation = string.IsNullOrWhiteSpace(item?.Expectation) ? null : item!.Expectation;
+
+            var itemKind = item?.HasAssertion == true ? StatusItemKind.Judgement : StatusItemKind.Informational;
+            var results = await db.CheckResults
+                .Include(x => x.ChecklistRun)
+                .Where(x => x.ChecklistItemId == finding.ChecklistItemId
+                    && x.ChecklistRun != null
+                    && x.ChecklistRun.EnvironmentId == finding.EnvironmentId)
+                .OrderByDescending(x => x.ChecklistRun!.StartedAt)
+                .Take(FindingTimelineBuilder.RecentRunLimit)
+                .AsNoTracking()
+                .ToListAsync();
+
+            timeline = FindingTimelineBuilder.Build(itemSeverity ?? finding.Severity, itemKind, results);
+        }
+        catch (Exception ex)
+        {
+            loadError = ex.Message;
+        }
+    }
+
+    private sealed record ItemContext(
+        string Title,
+        bool IsArchived,
+        Severity? Severity,
+        bool HasAssertion,
+        string? ToolName,
+        string? ValuePath,
+        ComparisonOperator? Operator,
+        string? Threshold,
+        string? Window,
+        string? Expectation);
+
+    private static string? AssertionSummary(ItemContext? item)
+    {
+        if (item is null || !item.HasAssertion)
+        {
+            return null;
+        }
+
+        var parts = new List<string>();
+        if (!string.IsNullOrWhiteSpace(item.ToolName))
+        {
+            parts.Add(item.ToolName);
+        }
+        if (!string.IsNullOrWhiteSpace(item.ValuePath))
+        {
+            parts.Add(item.ValuePath);
+        }
+        if (item.Operator is { } op)
+        {
+            parts.Add(OperatorText(op));
+        }
+        if (!string.IsNullOrWhiteSpace(item.Threshold))
+        {
+            parts.Add(item.Threshold);
+        }
+        if (!string.IsNullOrWhiteSpace(item.Window))
+        {
+            parts.Add($"窗口 {item.Window}");
+        }
+
+        return parts.Count == 0 ? null : string.Join(" ", parts);
+    }
+
+    private static string OperatorText(ComparisonOperator op) => op switch
+    {
+        ComparisonOperator.Lt => "<",
+        ComparisonOperator.Lte => "≤",
+        ComparisonOperator.Gt => ">",
+        ComparisonOperator.Gte => "≥",
+        ComparisonOperator.Eq => "=",
+        ComparisonOperator.Ne => "≠",
+        ComparisonOperator.Contains => "包含",
+        ComparisonOperator.NotContains => "不包含",
+        _ => op.ToString(),
+    };
+}

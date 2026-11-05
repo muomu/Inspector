@@ -48,7 +48,7 @@ workspace = await Workspace.ResolveAsync(WorkspaceContextService.ReadQueryValue(
 
 ```csharp
 private string ContextQuery => workspace.QuerySuffix;
-private string FindingsHref => $"/findings{ContextQuery}";
+private string RunsHref => $"/runs{ContextQuery}";
 ```
 
 - GET 筛选表单必须带隐藏字段，避免 submit 丢掉 query：
