@@ -8,7 +8,6 @@ using GrowthInspector.Core.Options;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging.Abstractions;
-using Microsoft.Extensions.Options;
 
 namespace GrowthInspector.Tests.Agents;
 
@@ -135,7 +134,6 @@ public sealed class ChecklistItemAgentExecutorTests : IDisposable
             new UnavailableChatClient("未配置环境变量 DEEPSEEK_API_KEY，模型调用不可用。"),
             factory,
             database.Factory,
-            Options.Create(new InspectionOptions()),
             NullLogger<ChecklistItemAgentExecutor>.Instance);
 
         var result = await executor.ExecuteAsync(CreateRequest(seed));
@@ -143,30 +141,6 @@ public sealed class ChecklistItemAgentExecutorTests : IDisposable
         Assert.Equal(CheckResultStatus.Error, result.Status);
         Assert.Contains("未完成 LLM 判定", result.Narrative);
         Assert.Null(result.AgentVerdict);
-    }
-
-    [Fact]
-    public async Task Timeout_ProducesErrorWithExplicitNarrative()
-    {
-        var seed = await AgentTestData.SeedAsync(database);
-        var chat = new ScriptedChatClient
-        {
-            Handler = async (_, _, cancellationToken) =>
-            {
-                await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
-                return ScriptedChatClient.Text("{}");
-            },
-        };
-
-        var executor = await CreateExecutorAsync(
-            chat,
-            seed,
-            options: new InspectionOptions { AgentItemTimeoutSeconds = 1 });
-        var result = await executor.ExecuteAsync(CreateRequest(seed));
-
-        Assert.Equal(CheckResultStatus.Error, result.Status);
-        Assert.Contains("未完成 LLM 判定", result.Narrative);
-        Assert.Contains("超时", result.Narrative);
     }
 
     [Fact]
@@ -247,7 +221,6 @@ public sealed class ChecklistItemAgentExecutorTests : IDisposable
             chat,
             factory,
             database.Factory,
-            Options.Create(effectiveOptions),
             NullLogger<ChecklistItemAgentExecutor>.Instance);
     }
 

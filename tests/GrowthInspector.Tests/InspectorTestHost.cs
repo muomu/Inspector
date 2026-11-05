@@ -45,7 +45,6 @@ internal sealed class InspectorTestHost : IAsyncDisposable
         {
             options.TimeZone = "UTC";
             options.SchedulerTickSeconds = 1;
-            options.AgentItemTimeoutSeconds = 2;
             configureInspector?.Invoke(options);
         });
         services.Configure<DeepSeekOptions>(options =>

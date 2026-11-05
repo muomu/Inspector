@@ -13,8 +13,8 @@ public sealed record AgentLoopResult(
     string? ErrorMessage);
 
 /// <summary>
-/// 通用的「模型 → 工具 → 模型」循环：最多跑 maxTurns 轮，期间把工具结果回传给模型；
-/// 模型不再发起工具调用时的文本即最终输出。工具调用审计由 AgentToolset 负责。
+/// 通用的「模型 → 工具 → 模型」循环：maxTurns > 0 时最多跑 maxTurns 轮，maxTurns <= 0 表示不限轮次；
+/// 期间把工具结果回传给模型，模型不再发起工具调用时的文本即最终输出。工具调用审计由 AgentToolset 负责。
 /// </summary>
 public static class AgentToolLoop
 {
@@ -31,7 +31,7 @@ public static class AgentToolLoop
         ArgumentNullException.ThrowIfNull(toolset);
         ArgumentNullException.ThrowIfNull(messages);
 
-        var turnLimit = Math.Max(1, maxTurns);
+        var turnLimit = maxTurns > 0 ? maxTurns : int.MaxValue;
         var promptTokens = 0;
         var completionTokens = 0;
 

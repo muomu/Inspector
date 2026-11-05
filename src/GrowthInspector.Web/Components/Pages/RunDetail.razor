@@ -253,109 +253,9 @@ else
         </div>
     </section>
 
-    <section class="section" aria-labelledby="s-tools">
-        <div class="section__head">
-            <span class="section__index">§ 02</span>
-            <h2 class="section__title" id="s-tools">工具调用</h2>
-            <span class="section__meta">@run.ToolCalls.Count 次调用 · 参数与结果折叠</span>
-        </div>
-        <div class="section__body">
-            @if (run.ToolCalls.Count == 0)
-            {
-                <div class="empty">
-                    <span class="empty__glyph" aria-hidden="true">◇</span>
-                    <h3 class="empty__title">本轮没有工具调用记录</h3>
-                    <p class="empty__copy">执行 agent / MCP 链路尚未产生调用；没有取证时判定只能按待证展示。</p>
-                </div>
-            }
-            else
-            {
-                <div class="table-wrap" role="region" aria-label="工具调用审计" tabindex="0">
-                    <table class="table table--wide">
-                        <caption class="sr-only">本轮工具调用：时间、检查项、角色、服务、工具、参数、结果、耗时与状态</caption>
-                        <thead>
-                            <tr>
-                                <th scope="col">时间</th>
-                                <th scope="col">检查项</th>
-                                <th scope="col">角色</th>
-                                <th scope="col">服务</th>
-                                <th scope="col">工具</th>
-                                <th scope="col">参数</th>
-                                <th scope="col">结果</th>
-                                <th scope="col" class="num">耗时</th>
-                                <th scope="col">状态</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            @foreach (var call in run.ToolCalls.OrderBy(x => x.CreatedAt))
-                            {
-                                <tr>
-                                    <td class="mono">@call.CreatedAt.ToLocalTime().ToString("MM-dd HH:mm:ss")</td>
-                                    <td>@ToolCallItemText(call)</td>
-                                    <td>@AgentRoleText(call.AgentRole)</td>
-                                    <td>@(string.IsNullOrWhiteSpace(call.ServerName) ? "本地工具" : call.ServerName)</td>
-                                    <td class="mono">@call.ToolName</td>
-                                    <td>
-                                        @if (string.IsNullOrWhiteSpace(call.Arguments))
-                                        {
-                                            <span class="note">-</span>
-                                        }
-                                        else
-                                        {
-                                            <details class="evidence">
-                                                <summary>@DisplayText.Shorten(call.Arguments, 80)</summary>
-                                                <div class="evidence__body">
-                                                    <pre class="code">@call.Arguments</pre>
-                                                </div>
-                                            </details>
-                                        }
-                                    </td>
-                                    <td>
-                                        @if (string.IsNullOrWhiteSpace(call.Result))
-                                        {
-                                            <span class="note">-</span>
-                                        }
-                                        else
-                                        {
-                                            <details class="evidence">
-                                                <summary>@DisplayText.Shorten(call.Result, 120)</summary>
-                                                <div class="evidence__body">
-                                                    <pre class="code">@call.Result</pre>
-                                                </div>
-                                            </details>
-                                        }
-                                        @if (call.Truncated)
-                                        {
-                                            <span class="chip">结果已截断</span>
-                                        }
-                                    </td>
-                                    <td class="num">@DisplayText.FormatDuration(call.DurationMs)</td>
-                                    <td>
-                                        @if (call.Succeeded)
-                                        {
-                                            <span class="chip">成功</span>
-                                        }
-                                        else
-                                        {
-                                            <span class="chip">失败</span>
-                                            @if (!string.IsNullOrWhiteSpace(call.ErrorMessage))
-                                            {
-                                                <span class="note">@DisplayText.Shorten(call.ErrorMessage, 80)</span>
-                                            }
-                                        }
-                                    </td>
-                                </tr>
-                            }
-                        </tbody>
-                    </table>
-                </div>
-            }
-        </div>
-    </section>
-
     <section class="section" aria-labelledby="s-observations">
         <div class="section__head">
-            <span class="section__index">§ 03</span>
+            <span class="section__index">§ 02</span>
             <h2 class="section__title" id="s-observations">观察</h2>
             <span class="section__meta">@ObservationCount 条 · 只进日报观察</span>
         </div>
@@ -395,7 +295,7 @@ else
 
     <section class="section" aria-labelledby="s-snapshot">
         <div class="section__head">
-            <span class="section__index">§ 04</span>
+            <span class="section__index">§ 03</span>
             <h2 class="section__title" id="s-snapshot">执行快照</h2>
             <span class="section__meta">@SnapshotMeta</span>
         </div>
@@ -577,7 +477,7 @@ else
 
     <section class="section" aria-labelledby="s-notify">
         <div class="section__head">
-            <span class="section__index">§ 05</span>
+            <span class="section__index">§ 04</span>
             <h2 class="section__title" id="s-notify">通知与摘要</h2>
             <span class="section__meta">通知 @larkNotifications.Count 条 · 摘要 @(run.Summary is null ? "无" : "1 份")</span>
         </div>
@@ -745,7 +645,6 @@ else
                 .Include(x => x.Checklist)
                 .Include(x => x.Environment)
                 .Include(x => x.Results)
-                .Include(x => x.ToolCalls)
                 .Include(x => x.Summary)
                 .AsNoTracking()
                 .AsSplitQuery()
@@ -768,13 +667,6 @@ else
                 foreach (var item in snapshot.Items)
                 {
                     itemIds.Add(item.ItemId);
-                }
-            }
-            foreach (var toolCall in run.ToolCalls)
-            {
-                if (toolCall.ChecklistItemId is { } toolCallItemId)
-                {
-                    itemIds.Add(toolCallItemId);
                 }
             }
 
@@ -904,9 +796,6 @@ else
         return (title, state?.Archived ?? false, missing);
     }
 
-    private string ToolCallItemText(ToolCallLog call)
-        => call.ChecklistItemId is { } itemId ? ItemInfo(itemId).Title : "-";
-
     private string? RunbookMarker(Guid runbookId)
     {
         if (!runbookStates.TryGetValue(runbookId, out var state))
@@ -952,15 +841,6 @@ else
         VerdictStatus.Abnormal => "Abnormal",
         VerdictStatus.InsufficientEvidence => "证据不足",
         _ => verdict.ToString() ?? "-",
-    };
-
-    private static string AgentRoleText(AgentRole? role) => role switch
-    {
-        null => "-",
-        AgentRole.Execution => "执行",
-        AgentRole.Reflection => "反思",
-        AgentRole.Summary => "摘要",
-        _ => role.ToString() ?? "-",
     };
 
     private static string LarkKindText(LarkNotificationKind kind) => kind switch

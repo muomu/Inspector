@@ -3,26 +3,24 @@ using System.Text.Json;
 using GrowthInspector.Agents.Tools;
 using GrowthInspector.Core.Abstractions;
 using GrowthInspector.Core.Models;
-using GrowthInspector.Core.Options;
 using GrowthInspector.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Options;
 
 namespace GrowthInspector.Agents.Execution;
 
 /// <summary>
 /// 检查项执行 agent：每次执行一个检查项、一个会话。
 /// 流程：组工具集 → 注入项目上下文 / 手册 / 自然语言正文 / finding 历史 → 多轮取证 → 解析 claim。
-/// LLM 失败、超时、无 key 或 claim 非法都返回 Error，不伪造结论；
+/// 工具调用轮次与执行时长均不设上限，跑满为止（仅随外部取消令牌停止）；
+/// LLM 失败、无 key 或 claim 非法都返回 Error，不伪造结论；
 /// 判定完全由 agent 依检查项正文给出（框架不再按结构化断言复核）。
 /// </summary>
 public sealed class ChecklistItemAgentExecutor(
     IChatClient chatClient,
     AgentToolsetFactory toolsetFactory,
     IDbContextFactory<GrowthInspectorDbContext> dbContextFactory,
-    IOptions<InspectionOptions> options,
     ILogger<ChecklistItemAgentExecutor> logger) : IChecklistItemExecutor
 {
     private static readonly JsonSerializerOptions SnapshotJsonOptions = new(JsonSerializerDefaults.Web);
@@ -38,10 +36,6 @@ public sealed class ChecklistItemAgentExecutor(
         var completionTokens = 0;
         AgentToolset? toolset = null;
 
-        var timeoutSeconds = Math.Max(1, options.Value.AgentItemTimeoutSeconds);
-        using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        timeoutCts.CancelAfter(TimeSpan.FromSeconds(timeoutSeconds));
-
         try
         {
             toolset = await toolsetFactory.CreateAsync(
@@ -51,17 +45,17 @@ public sealed class ChecklistItemAgentExecutor(
                     request.ChecklistRunId,
                     request.Item.ItemId,
                     AgentRole.Execution),
-                timeoutCts.Token);
+                cancellationToken);
 
-            var snapshot = await LoadSnapshotAsync(request.ChecklistRunId, timeoutCts.Token);
+            var snapshot = await LoadSnapshotAsync(request.ChecklistRunId, cancellationToken);
             var messages = ExecutionPromptBuilder.Build(request, snapshot);
 
             var loop = await AgentToolLoop.RunAsync(
                 chatClient,
                 toolset,
                 messages,
-                options.Value.AgentMaxTurns,
-                timeoutCts.Token);
+                maxTurns: 0,
+                cancellationToken);
 
             promptTokens = loop.PromptTokens;
             completionTokens = loop.CompletionTokens;
@@ -104,21 +98,6 @@ public sealed class ChecklistItemAgentExecutor(
                 Narrative: claim.Narrative,
                 Observations: claim.Observations,
                 ToolCallCount: toolset.ToolCallCount);
-        }
-        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
-        {
-            logger.LogWarning(
-                "检查项「{Title}」执行超时（{TimeoutSeconds} 秒，runId={RunId}）。",
-                request.Item.Title,
-                timeoutSeconds,
-                request.ChecklistRunId);
-
-            return Failure(
-                $"执行超时（{timeoutSeconds} 秒）。",
-                stopwatch,
-                toolset,
-                promptTokens,
-                completionTokens);
         }
         catch (OperationCanceledException)
         {
