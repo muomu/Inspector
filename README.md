@@ -10,7 +10,8 @@
 > 异常先看哪）+ 严重级别；判定由执行 agent 依正文取证后自行给出，框架不再按阈值复核。
 > 知识资产直接取自 `tradepass.growth` 仓库的真实运维手册；检查项正文不点名工具、指标或 SQL；
 > mock MCP server 与双判链路已删除，执行侧只登记真实、只读的 Grafana MCP。
-> 真实 DeepSeek key 与真实 Lark webhook 按 v1 口径不接入，Lark 链路以 mock 验收。
+> LLM API key 改由 `/settings` 的「模型接入」配置（DataProtection 加密落库，不再读环境变量）；
+> 真实 Lark webhook 仍按 v1 口径不接入，Lark 链路以 mock 验收。
 
 ## 核心模型
 
@@ -95,14 +96,19 @@ Inspector__SqlitePath=/tmp/inspector.db dotnet run --project src/GrowthInspector
 Grafana MCP 以 stdio 子进程登记，命令指向本机只读包装脚本（`/home/muomu/.inspector/bin/mcp-grafana.sh`），
 环境变量与 token 只注入该脚本，不进数据库与 Git。
 
-环境变量（key 与 token 都不入 Git）：
+环境变量（token 与开关都不入 Git）：
 
 ```bash
-export DEEPSEEK_API_KEY="sk-..."            # 可选；未配置时执行 agent 明确报错、不伪造结论，摘要有模板兜底
 export INSPECTOR_MCP_TOKEN="..."            # 管理 MCP 的 bearer token（缺失时管理端点 401）
 export INSPECTOR_MCP_CONFIG_WRITE=true      # 可选：开启 config-write 档（默认只读）
 export INSPECTOR_MCP_ADMIN_WRITE=true       # 可选：开启 admin-write 档（默认只读）
 ```
+
+LLM API key 不走环境变量：启动后在 `/settings` 的「§ 04 模型接入」填写 key、BaseUrl、模型并保存。
+key 用 ASP.NET Core DataProtection 加密后写入 SQLite，页面只回显末四位；保存后**对新任务立即生效**，
+运行中的检查单继续用旧 key 跑完。密钥环在 `src/GrowthInspector.Web/data/protection-keys/`，
+换机器或删掉密钥环会让已存的 key 解不开（按「未配置」处理，重新填一次即可）。
+未配置 key 时执行项落 `Error` 并明确「未完成 LLM 判定」，不伪造结论，日报摘要走模板兜底。
 
 管理 MCP endpoint：`http://127.0.0.1:5273/mcp`（Streamable HTTP，stateless，仅 loopback；
 无 token 401、非法 Origin/Host 403；只读档 22 个工具，两档写开关全开 43 个工具）。
@@ -111,8 +117,8 @@ export INSPECTOR_MCP_ADMIN_WRITE=true       # 可选：开启 admin-write 档（
 
 `src/GrowthInspector.Web/appsettings.json`：
 
-- `Inspector`：审计留存天数、工具结果截断、检查单并发上限、调度 tick、每小时 / 每天触发时刻、agent 轮次与超时、检索条数、时区；
-- `DeepSeek`：BaseUrl、执行 / 摘要模型、thinking 开关（执行关闭、摘要开启）、超时；
+- `Inspector`：审计留存天数、工具结果截断、检查单并发上限、调度 tick、每小时 / 每天触发时刻、检索条数、时区；
+- `DeepSeek`：BaseUrl 与模型（设置页未保存过时的**出厂预填值**）、thinking 开关（执行关闭、摘要开启）、超时；
 - `ManagementMcp`：端点路径、绑定地址、token / 写开关的环境变量名、允许的 Origin 列表。
 
 ## 验收
@@ -128,6 +134,8 @@ dotnet test tests/GrowthInspector.Tests           # 全部通过
 - `ManagementMcpTests` / `ManagementMcpGuardTests`：鉴权 401、Origin/Host 403、只读档工具过滤、写档工具、端到端调用；
 - `SchedulingTests` / `OrchestrationTests`：频率扫描、互斥 / Skipped、启动清理、串行落库、单项失败继续、并发；
 - `FindingNotifierTests` / `DailyReportTests`：去重、恢复、InsufficientEvidence 不建 finding、mock 发送、日报汇总与 10:00 触发；
+- `LlmSettingsTests` / `LlmChatClientTests`：key 加密落库与掩码回显、清除只清 key、三字段必填、试连失败分类、
+  按 scope 解析配置快照（新任务新 key、在跑任务旧 key）；
 - `ClusterOverviewBuilderTests` / `StatusPresenter` 相关：快照缺失、部分执行、严重级缺失等容易产生假健康的边界。
 
 手工冒烟：
@@ -139,20 +147,25 @@ dotnet test tests/GrowthInspector.Tests           # 全部通过
 4. 凭据 write-only：`project_update` 写入 webhook 后 `project_get` 只返回 `****1234`；
 5. 归档：`project_update { isArchived: true }` 后默认列表隐藏，恢复后重新可见；
 6. 跨 Project 引用：`checklist_runbook_add` 引其他 Project 的手册被拒绝；
-7. 日报：到点生成日报并写 `LarkNotification(DailyReport, IsMock=true)` 与 `AiSummary(DailyReport)`，日报页可见。
+7. 日报：到点生成日报并写 `LarkNotification(DailyReport, IsMock=true)` 与 `AiSummary(DailyReport)`，日报页可见；
+8. 模型接入：`/settings` 填 key / BaseUrl / 模型 → 「测试连接」按表单值真发一次最小请求（15s 超时，失败按 401 /
+   网络 / 模型名分类提示）→ 保存后回显 `****abcd`，「清除密钥」只清 key、保留地址与模型并显示「密钥缺失」。
 
 ## 已知边界
 
 - 执行侧只接真实、只读的 Grafana MCP：Prometheus / Loki / Tempo / Grafana API 能回答的判据可取证；
   MySQL / StarRocks 表级判据没有 SQL 通道，会落「待证」，这是当前口径接受的结果；
 - 检查项正文按约定不点名数据源，agent 需要从项目上下文与手册里自己找线索；
-- 真实 DeepSeek key 未接入：无 key 时执行项落 `Error` 并明确「未完成 LLM 判定」；
+- DeepSeek key 存在设置页（DataProtection 加密落库）：未配置时执行项落 `Error` 并明确「未完成 LLM 判定」；
+  加密只挡「单独拷走 .db」与误提交，拿到整个 `data/` 目录（含密钥环）仍可解；
+- 一个 Model 通吃执行与摘要，不能再给摘要单独指定模型（`ThinkingForSummary` 仍可单独开）；
 - Lark 全 mock：只写 `LarkNotification`，不发起真实请求；
 - 日报「同日只发一次」是进程内记账，重启后当天可能重发一次；
 - 管理写 last-write-wins（无 `Revision` / `expected_revision`），无 `ManagementAudit`、软删 / 回收站（v2）；
 - 归档是软过滤，不级联：归档 Project 后其环境 / 检查单仍可单独编辑；
 - 管理 MCP 工具返回 `{ ok, data | error }` 文本，未启用 structuredContent；
-- `EnsureCreated` 无迁移，模型变更后删库重建。
+- `EnsureCreated` 无迁移，模型变更后删库重建：本次新增 `LlmSettings` 表，老库不会自动建表
+  （`/settings` 会提示加载失败），升级需删库重建；本机旧库已按 `data/inspector.db.bak-<时间戳>` 备份。
 
 ## 约定
 

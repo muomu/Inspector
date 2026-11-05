@@ -141,4 +141,19 @@ public interface IManagementService : IRunbookWriteService
     Task<ChecklistRunEnqueuedResult> EnqueueChecklistRunAsync(
         Guid checklistId, Guid environmentId, ChecklistTrigger trigger = ChecklistTrigger.Manual,
         CancellationToken cancellationToken = default);
+
+    // ---- 模型接入（LLM API key） ----
+
+    /// <summary>读取全局 LLM 配置；key 只返回掩码，另带 appsettings 的出厂预填值。</summary>
+    Task<LlmSettingsView> GetLlmSettingsAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>保存全局 LLM 配置（三字段必填，key 传掩码或空表示沿用已有 key）。</summary>
+    Task SaveLlmSettingsAsync(SaveLlmSettingsRequest request, CancellationToken cancellationToken = default);
+
+    /// <summary>只清除 API key，保留 BaseUrl 与模型。</summary>
+    Task ClearLlmApiKeyAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>用当前表单值发一次最小 chat 请求试连；不改动已保存的配置。</summary>
+    Task<LlmConnectionTestResult> TestLlmConnectionAsync(
+        TestLlmConnectionRequest request, CancellationToken cancellationToken = default);
 }

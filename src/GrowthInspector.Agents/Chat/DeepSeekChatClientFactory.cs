@@ -3,16 +3,9 @@ using Microsoft.Extensions.AI;
 
 namespace GrowthInspector.Agents.Chat;
 
-/// <summary>按 DeepSeek（OpenAI 兼容）配置创建客户端。</summary>
+/// <summary>按 DeepSeek（OpenAI 兼容）配置创建客户端。密钥由调用方从设置页配置快照提供，不读环境变量。</summary>
 public static class DeepSeekChatClientFactory
 {
-    /// <summary>读取本地环境变量中的密钥；不入库、不进 Git。</summary>
-    public const string ApiKeyEnvironmentVariable = "DEEPSEEK_API_KEY";
-
-    /// <summary>从环境变量读取密钥；未配置时返回 null。</summary>
-    public static string? ReadApiKeyFromEnvironment()
-        => Environment.GetEnvironmentVariable(ApiKeyEnvironmentVariable);
-
     /// <summary>创建执行角色客户端（保留骨架阶段的调用签名）。</summary>
     public static IChatClient Create(DeepSeekOptions options, string apiKey, string? model = null)
         => CreateClient(options, apiKey, DeepSeekClientRole.Execution, modelOverride: model);

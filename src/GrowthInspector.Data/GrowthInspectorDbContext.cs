@@ -35,6 +35,8 @@ public sealed class GrowthInspectorDbContext(DbContextOptions<GrowthInspectorDbC
 
     public DbSet<LarkNotification> LarkNotifications => Set<LarkNotification>();
 
+    public DbSet<LlmSetting> LlmSettings => Set<LlmSetting>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         ConfigureDateTimeOffsetConversions(modelBuilder);
@@ -51,6 +53,7 @@ public sealed class GrowthInspectorDbContext(DbContextOptions<GrowthInspectorDbC
         ConfigureToolCallLogs(modelBuilder);
         ConfigureMcpServers(modelBuilder);
         ConfigureLarkNotifications(modelBuilder);
+        ConfigureLlmSettings(modelBuilder);
     }
 
     private static void ConfigureDateTimeOffsetConversions(ModelBuilder modelBuilder)
@@ -302,6 +305,18 @@ public sealed class GrowthInspectorDbContext(DbContextOptions<GrowthInspectorDbC
                 .WithMany()
                 .HasForeignKey(x => x.ChecklistRunId)
                 .OnDelete(DeleteBehavior.Cascade);
+        });
+    }
+
+    private static void ConfigureLlmSettings(ModelBuilder modelBuilder)
+    {
+        modelBuilder.Entity<LlmSetting>(entity =>
+        {
+            // 应用级单行配置：Id 固定为 1，不参与任何业务外键。
+            entity.ToTable("LlmSettings");
+            entity.HasKey(x => x.Id);
+            entity.Property(x => x.BaseUrl).HasMaxLength(500);
+            entity.Property(x => x.Model).HasMaxLength(200);
         });
     }
 }

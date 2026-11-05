@@ -1,7 +1,9 @@
 using GrowthInspector.Core.Abstractions;
 using GrowthInspector.Core.Models;
+using GrowthInspector.Core.Options;
 using GrowthInspector.Data;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
 using EnvironmentModel = GrowthInspector.Core.Models.Environment;
 
 namespace GrowthInspector.Management;
@@ -12,10 +14,16 @@ namespace GrowthInspector.Management;
 /// </summary>
 public sealed partial class ManagementService(
     IDbContextFactory<GrowthInspectorDbContext> dbContextFactory,
-    IChecklistRunQueue runQueue) : IManagementService
+    IChecklistRunQueue runQueue,
+    ILlmSettingsStore llmSettingsStore,
+    IOptions<DeepSeekOptions> deepSeekOptions,
+    LlmConnectionProbe llmConnectionProbe) : IManagementService
 {
     private readonly IDbContextFactory<GrowthInspectorDbContext> dbContextFactory = dbContextFactory;
     private readonly IChecklistRunQueue runQueue = runQueue;
+    private readonly ILlmSettingsStore llmSettingsStore = llmSettingsStore;
+    private readonly IOptions<DeepSeekOptions> deepSeekOptions = deepSeekOptions;
+    private readonly LlmConnectionProbe llmConnectionProbe = llmConnectionProbe;
 
     // ---- 项目 ----
 

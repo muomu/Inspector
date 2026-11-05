@@ -1,4 +1,6 @@
 using GrowthInspector.Agents;
+using GrowthInspector.Agents.Chat;
+using GrowthInspector.Core.Abstractions;
 using GrowthInspector.Core.Options;
 using GrowthInspector.Data;
 using GrowthInspector.Orchestration;
@@ -64,9 +66,13 @@ internal sealed class InspectorTestHost : IAsyncDisposable
         services.AddGrowthInspectorData(databasePath);
         services.AddGrowthInspectorAgents(new DeepSeekOptions());
 
-        // 测试默认不联网：覆盖 Agents 注册的 IChatClient（有 key 时那是真实 DeepSeek 客户端），
-        // 摘要用例可在 afterBuilder 里再注册自己的 stub 覆盖这里。
-        services.AddSingleton<IChatClient>(new StubChatClient());
+        // 测试默认不联网：LLM 配置固定为「未配置 key」，并把执行 / 摘要两个角色都覆盖成桩客户端
+        // （真实注册是惰性的 LlmChatClient，按 scope 读配置）。需要断言摘要的用例可在 afterBuilder 里再覆盖。
+        var stubChatClient = new StubChatClient();
+        services.AddSingleton<ILlmSettingsStore>(
+            new FixedLlmSettingsStore(new LlmSettingsSnapshot(null, null, null, null)));
+        services.AddSingleton<IChatClient>(stubChatClient);
+        services.AddScoped(_ => new DeepSeekChatClients(stubChatClient, stubChatClient));
 
         services.AddGrowthInspectorOrchestration();
 

@@ -49,7 +49,7 @@ public sealed class DeepSeekChatClient : IChatClient
         {
             throw new DeepSeekRequestException(
                 DeepSeekFailureKind.MissingApiKey,
-                $"未配置环境变量 {DeepSeekChatClientFactory.ApiKeyEnvironmentVariable}，无法调用 DeepSeek。");
+                "未配置 LLM API key，请到「设置 · 模型接入」填写后再执行。");
         }
 
         if (!Uri.TryCreate(NormalizeBaseUrl(options.BaseUrl), UriKind.Absolute, out var baseUri))
@@ -65,9 +65,7 @@ public sealed class DeepSeekChatClient : IChatClient
             ? options.ThinkingForSummary
             : options.ThinkingForExecution;
 
-        _model = string.IsNullOrWhiteSpace(modelOverride)
-            ? (role == DeepSeekClientRole.Summary ? options.SummaryModel : options.Model)
-            : modelOverride;
+        _model = string.IsNullOrWhiteSpace(modelOverride) ? options.Model : modelOverride;
         if (string.IsNullOrWhiteSpace(_model))
         {
             _model = options.Model;

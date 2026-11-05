@@ -1,7 +1,9 @@
 using GrowthInspector.Core.Abstractions;
+using Microsoft.AspNetCore.DataProtection;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace GrowthInspector.Data;
 
@@ -28,6 +30,11 @@ public static class DataServiceCollectionExtensions
 
         services.AddDbContextFactory<GrowthInspectorDbContext>(options => options.UseSqlite(connectionString));
         services.AddScoped<IAuditPruner, AuditPruner>();
+
+        // 模型接入配置（全局单行 LlmSettings）：key 加密落库。这里只保证 provider 存在，
+        // 密钥环位置由宿主覆盖（Web 指到 data/protection-keys）；测试可用 EphemeralDataProtectionProvider。
+        services.AddDataProtection();
+        services.TryAddSingleton<ILlmSettingsStore, LlmSettingsStore>();
 
         return services;
     }

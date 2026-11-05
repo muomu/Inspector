@@ -3,7 +3,7 @@ using Microsoft.Extensions.AI;
 namespace GrowthInspector.Agents.Chat;
 
 /// <summary>
-/// 未配置 DEEPSEEK_API_KEY 时的占位 IChatClient：任何调用都会明确抛可识别异常，
+/// 未配置 LLM API key 时的占位 IChatClient：任何调用都会明确抛可识别异常，
 /// 而不是伪造结论 —— 对应 AC8「LLM 调用失败有兜底且不伪造结论」。
 /// </summary>
 public sealed class UnavailableChatClient(

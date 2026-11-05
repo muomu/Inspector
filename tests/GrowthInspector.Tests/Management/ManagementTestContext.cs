@@ -4,6 +4,7 @@ using GrowthInspector.Core.Options;
 using GrowthInspector.Data;
 using GrowthInspector.Management;
 using GrowthInspector.Orchestration;
+using Microsoft.AspNetCore.DataProtection;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -24,6 +25,9 @@ internal sealed class ManagementTestContext : IAsyncDisposable
     }
 
     public IManagementService Management => serviceProvider.GetRequiredService<IManagementService>();
+
+    /// <summary>LLM 配置存储（读出来是解密后的明文，用于断言掩码语义没有丢 key）。</summary>
+    public ILlmSettingsStore LlmSettings => serviceProvider.GetRequiredService<ILlmSettingsStore>();
 
     public IRunbookWriteService RunbookWriter => serviceProvider.GetRequiredService<IRunbookWriteService>();
 
@@ -46,6 +50,8 @@ internal sealed class ManagementTestContext : IAsyncDisposable
 
         var services = new ServiceCollection();
         services.AddLogging(builder => builder.SetMinimumLevel(LogLevel.Warning));
+        // 临时密钥保护：不写用户目录下的真实密钥环，每次测试独立。
+        services.AddSingleton<IDataProtectionProvider>(new EphemeralDataProtectionProvider());
         services.Configure<InspectionOptions>(_ => { });
         services.AddGrowthInspectorData(databasePath);
         services.AddGrowthInspectorOrchestration();

@@ -3,6 +3,7 @@ using System.Text;
 using System.Text.Json;
 using GrowthInspector.Agents;
 using GrowthInspector.Agents.Chat;
+using GrowthInspector.Core.Abstractions;
 using GrowthInspector.Core.Options;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Configuration;
@@ -69,7 +70,7 @@ public sealed class DeepSeekChatClientTests
     }
 
     [Fact]
-    public async Task SummaryClient_EnablesThinkingAndUsesSummaryModel()
+    public async Task SummaryClient_EnablesThinkingAndUsesConfiguredModel()
     {
         var handler = new RecordingHandler(SuccessJson);
         var client = new DeepSeekChatClient(CreateOptions(), "test-key", DeepSeekClientRole.Summary, httpMessageHandler: handler);
@@ -77,7 +78,8 @@ public sealed class DeepSeekChatClientTests
         await client.GetResponseWithUsageAsync([new ChatMessage(ChatRole.User, "请总结")]);
 
         using var request = JsonDocument.Parse(handler.LastBody!);
-        Assert.Equal("deepseek-summary", request.RootElement.GetProperty("model").GetString());
+        // 一个 Model 通吃：摘要角色与执行角色用同一个模型名。
+        Assert.Equal("deepseek-exec", request.RootElement.GetProperty("model").GetString());
         Assert.Equal("enabled", request.RootElement.GetProperty("thinking").GetProperty("type").GetString());
     }
 
@@ -238,28 +240,27 @@ public sealed class DeepSeekChatClientTests
     [Fact]
     public async Task MissingApiKey_RegistrationFallsBackToUnavailableClient()
     {
-        var original = Environment.GetEnvironmentVariable(DeepSeekChatClientFactory.ApiKeyEnvironmentVariable);
-        Environment.SetEnvironmentVariable(DeepSeekChatClientFactory.ApiKeyEnvironmentVariable, null);
-        try
-        {
-            var services = new ServiceCollection();
-            services.AddGrowthInspectorAgents(new DeepSeekOptions());
-            await using var provider = services.BuildServiceProvider();
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddOptions<DeepSeekOptions>();
+        services.AddSingleton<ILlmSettingsStore>(
+            new FixedLlmSettingsStore(new LlmSettingsSnapshot(null, null, null, null)));
+        services.AddGrowthInspectorAgents(new DeepSeekOptions());
+        await using var provider = services.BuildServiceProvider();
 
-            var client = provider.GetRequiredService<IChatClient>();
-            Assert.IsType<UnavailableChatClient>(client);
+        using var scope = provider.CreateScope();
+        var client = scope.ServiceProvider.GetRequiredService<IChatClient>();
 
-            var exception = await Assert.ThrowsAsync<DeepSeekRequestException>(
-                () => client.GetResponseAsync([new ChatMessage(ChatRole.User, "hello")]));
-            Assert.Equal(DeepSeekFailureKind.MissingApiKey, exception.Kind);
+        var exception = await Assert.ThrowsAsync<DeepSeekRequestException>(
+            () => client.GetResponseAsync([new ChatMessage(ChatRole.User, "hello")]));
 
-            var clients = provider.GetRequiredService<DeepSeekChatClients>();
-            Assert.Same(clients.Execution, clients.Summary);
-        }
-        finally
-        {
-            Environment.SetEnvironmentVariable(DeepSeekChatClientFactory.ApiKeyEnvironmentVariable, original);
-        }
+        Assert.Equal(DeepSeekFailureKind.MissingApiKey, exception.Kind);
+        Assert.Contains("设置", exception.Message);
+
+        var clients = scope.ServiceProvider.GetRequiredService<DeepSeekChatClients>();
+        Assert.IsType<LlmChatClient>(clients.Execution);
+        // 执行与摘要是两个独立实例，各自按 scope 解析配置。
+        Assert.NotSame(clients.Execution, clients.Summary);
     }
 
     [Fact]
@@ -270,7 +271,6 @@ public sealed class DeepSeekChatClientTests
             {
                 ["DeepSeek:BaseUrl"] = "https://example.test/v1",
                 ["DeepSeek:Model"] = "deepseek-chat",
-                ["DeepSeek:SummaryModel"] = "deepseek-reasoner",
                 ["DeepSeek:TimeoutSeconds"] = "45",
                 ["DeepSeek:ThinkingForExecution"] = "false",
                 ["DeepSeek:ThinkingForSummary"] = "true",
@@ -282,7 +282,6 @@ public sealed class DeepSeekChatClientTests
         Assert.NotNull(options);
         Assert.Equal("https://example.test/v1", options!.BaseUrl);
         Assert.Equal("deepseek-chat", options.Model);
-        Assert.Equal("deepseek-reasoner", options.SummaryModel);
         Assert.Equal(45, options.TimeoutSeconds);
         Assert.False(options.ThinkingForExecution);
         Assert.True(options.ThinkingForSummary);
@@ -293,7 +292,6 @@ public sealed class DeepSeekChatClientTests
         {
             BaseUrl = "https://api.deepseek.com",
             Model = "deepseek-exec",
-            SummaryModel = "deepseek-summary",
             ThinkingForExecution = false,
             ThinkingForSummary = true,
             TimeoutSeconds = timeoutSeconds,

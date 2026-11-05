@@ -8,14 +8,24 @@ using GrowthInspector.Orchestration;
 using GrowthInspector.Web.Components;
 using GrowthInspector.Web.Scheduling;
 using GrowthInspector.Web.Services;
+using Microsoft.AspNetCore.DataProtection;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// 配置节：巡检运行参数与 DeepSeek 接入参数（密钥只走环境变量 DEEPSEEK_API_KEY）。
+// 配置节：巡检运行参数与 DeepSeek 接入参数。
+// API key 不再读环境变量：由设置页写入 SQLite（DataProtection 加密），下面的 DeepSeek 节只提供出厂预填值与 thinking / 超时。
 builder.Services.Configure<InspectionOptions>(
     builder.Configuration.GetSection(InspectionOptions.SectionName));
 builder.Services.Configure<DeepSeekOptions>(
     builder.Configuration.GetSection(DeepSeekOptions.SectionName));
+
+// 密钥保护：密钥环固定在本机 data/protection-keys，与数据库同生命周期；
+// 密钥环丢失会导致已存的 key 无法解密（读出来按「未配置」处理，重新填写即可）。
+var protectionKeysPath = Path.Combine(builder.Environment.ContentRootPath, "data", "protection-keys");
+Directory.CreateDirectory(protectionKeysPath);
+builder.Services.AddDataProtection()
+    .PersistKeysToFileSystem(new DirectoryInfo(protectionKeysPath))
+    .SetApplicationName("GrowthInspector");
 
 var sqlitePath = builder.Configuration["Inspector:SqlitePath"];
 if (string.IsNullOrWhiteSpace(sqlitePath))

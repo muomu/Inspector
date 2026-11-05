@@ -33,19 +33,19 @@ public sealed class InspectionOptions
     public string TimeZone { get; set; } = "Asia/Shanghai";
 }
 
-/// <summary>DeepSeek（OpenAI 兼容）接入配置，对应 appsettings.json 的 DeepSeek 节。密钥只走环境变量。</summary>
+/// <summary>
+/// DeepSeek（OpenAI 兼容）接入配置，对应 appsettings.json 的 DeepSeek 节。
+/// BaseUrl 与模型只在设置页从未保存过时作为出厂预填值；API key 只从设置页落库读取，不再读环境变量。
+/// </summary>
 public sealed class DeepSeekOptions
 {
     public const string SectionName = "DeepSeek";
 
-    /// <summary>API base URL。</summary>
+    /// <summary>API base URL（出厂默认值）。</summary>
     public string BaseUrl { get; set; } = "https://api.deepseek.com";
 
-    /// <summary>执行 agent 使用的模型。</summary>
+    /// <summary>执行与摘要共用的模型（出厂默认值）。</summary>
     public string Model { get; set; } = "deepseek-flash";
-
-    /// <summary>摘要 agent 使用的模型（可与执行模型不同）。</summary>
-    public string SummaryModel { get; set; } = "deepseek-flash";
 
     /// <summary>执行 agent 是否开启 thinking。v1 关闭：thinking + tools 需全程回传 reasoning_content。</summary>
     public bool ThinkingForExecution { get; set; }

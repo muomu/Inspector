@@ -33,6 +33,11 @@ public static class ManagementServiceCollectionExtensions
         services.TryAddSingleton<IRunbookWriteService>(
             serviceProvider => serviceProvider.GetRequiredService<IManagementService>());
 
+        // 模型接入（LLM API key）：配置存储由 Data 层注册（key 用 DataProtection 加密落库），
+        // 这里只注册出厂预填用的 DeepSeek 配置与「测试连接」探针。
+        services.AddOptions<DeepSeekOptions>();
+        services.TryAddSingleton(_ => new LlmConnectionProbe());
+
         // 后台触发队列的骨架实现：完整调度（并发 / 互斥 / 启动清理）由 TPG-2706 接管。
         services.TryAddSingleton<ChecklistRunQueue>();
         services.TryAddSingleton<IChecklistRunQueue>(
